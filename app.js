@@ -3,9 +3,8 @@
 (function () {
     'use strict';
 
-    // ─── Storage Key ───
+    // ─── Storage Keys ───
     const STORAGE_KEY = 'antigravity_clients';
-    const OBJECTIVE_KEY = 'antigravity_objective';
 
     // ─── Utils ───
     const parseAmt = (val) => {
@@ -52,6 +51,28 @@
         return Number(n || 0).toLocaleString('fr-FR');
     }
 
+    // Version compatible jsPDF (espace normal au lieu de l'espace insécable)
+    function formatMoneyPDF(n) {
+        const num = Number(n || 0);
+        return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    }
+
+    /** Échappe les caractères spéciaux HTML pour éviter les injections XSS */
+    function escapeHTML(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    /** Calcule le Total TTC : Facture + Frais Annexes + Déplacement */
+    function calcTTC(c) {
+        return (Number(c.montantBase) || 0) + (Number(c.fraisAnnexes) || 0) + (Number(c.deplacement) || 0);
+    }
+
     function formatDateFR(iso) {
         const d = new Date(iso);
         return d.toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
@@ -61,12 +82,17 @@
         const lines = text.split('\n');
         const data = {
             codeClient: '',
+            codeAgent: '',
+            codeMarketeur: '',
+            codeS: '',
+            nomClient: '',
             telephone: '',
             intervention: '',
             montantBase: 0,
+            commission: 0,
             fraisAnnexes: 0,
-            montantTTC: 0,
             deplacement: 0,
+            commentaire: '',
             priorite: 'normal',
             statut: 'en_attente'
         };
@@ -78,19 +104,32 @@
 
         lines.forEach(line => {
             const l = line.toLowerCase();
-            const parts = line.split(/[:=-]/);
+
+            // Traitement spécial pour CODE S (le tiret dans la valeur ne doit pas être utilisé comme séparateur)
+            if (l.includes('code s')) {
+                const codeSParts = line.split(/[:]/); // split uniquement sur ':'
+                if (codeSParts.length >= 2) {
+                    data.codeS = codeSParts.slice(1).join(':').trim();
+                }
+                return;
+            }
+
+            const parts = line.split(/[:=]/);
             if (parts.length < 2) return;
             const val = parts.slice(1).join(':').trim();
             if (!val) return;
 
             if (l.includes('code client') || l.includes('id client')) data.codeClient = val;
-            else if (l.includes('nom') || l.includes('prénom')) data.nom = val;
+            else if (l.includes('code agent') || l.includes('id agent')) data.codeAgent = val;
+            else if (l.includes('code mark') || l.includes('marketeur')) data.codeMarketeur = val;
+            else if (l.includes('nom') || l.includes('prénom') || l.includes('prenom')) data.nomClient = val;
             else if (l.includes('tel') || l.includes('contact') || l.includes('tél')) data.telephone = val;
             else if (l.includes('inter') || l.includes('serv') || l.includes('prest')) data.intervention = val;
-            else if (l.includes('facture ttc') || l.includes('ttc')) data.montantTTC = cleanNum(val);
-            else if (l.match(/facture(?! ttc)/i) || l.includes('montant base')) data.montantBase = cleanNum(val);
+            else if (l.includes('facture') || l.includes('montant base')) data.montantBase = cleanNum(val);
+            else if (l.includes('commis')) data.commission = cleanNum(val);
             else if (l.includes('dépla') || l.includes('depla') || l.includes('trajet')) data.deplacement = cleanNum(val);
             else if (l.includes('frais') || l.includes('annexe')) data.fraisAnnexes = cleanNum(val);
+            else if (l.includes('comment') || l.includes('note') || l.includes('obs')) data.commentaire = val;
             else if (l.includes('prior')) data.priorite = val.toLowerCase().includes('urg') ? 'urgent' : (val.toLowerCase().includes('moy') ? 'moyen' : 'normal');
         });
 
@@ -108,7 +147,6 @@
 
     function saveAllClients(clients) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(clients));
-        updateSidebarProgress();
     }
 
     function getClientsForDate(dateStr) {
@@ -121,14 +159,19 @@
         const client = {
             id: generateId(),
             codeClient: data.codeClient || '',
+            codeAgent: data.codeAgent || '',
+            codeMarketeur: data.codeMarketeur || '',
+            codeS: data.codeS || '',
+            nomClient: data.nomClient || '',
             telephone: data.telephone || '',
             intervention: data.intervention || '',
             priorite: data.priorite || 'normal',
             statut: data.statut || 'en_attente',
             montantBase: Number(data.montantBase) || 0,
+            commission: Number(data.commission) || 0,
             fraisAnnexes: Number(data.fraisAnnexes) || 0,
             deplacement: Number(data.deplacement) || 0,
-            montantTTC: Number(data.montantTTC) || 0,
+            commentaire: data.commentaire || '',
             date: data.date || todayStr()
         };
         clients.push(client);
@@ -136,18 +179,63 @@
         return client;
     }
 
+
+    // Fonction globale pour vérifier les doublons et ajouter
+    function checkAndAddClient(data) {
+        return new Promise((resolve) => {
+            const clients = getAllClients();
+            
+            // Critères de doublon : même Code Client (si renseigné), ou même Trio (Téléphone + Intervention)
+            const isDuplicate = clients.some(c => {
+                const sameCode = data.codeClient && c.codeClient && data.codeClient.toLowerCase() === c.codeClient.toLowerCase();
+                const sameContactService = data.telephone && c.telephone && 
+                                          data.telephone.replace(/\s+/g, '') === c.telephone.replace(/\s+/g, '') &&
+                                          data.intervention && c.intervention &&
+                                          data.intervention.toLowerCase() === c.intervention.toLowerCase();
+                return sameCode || sameContactService;
+            });
+
+            if (isDuplicate) {
+                const modal = $('#global-duplicate-modal');
+                const btnForce = $('#global-dup-force');
+                const btnCancel = $('#global-dup-cancel');
+                
+                if (modal && btnForce && btnCancel) {
+                    modal.classList.remove('hidden');
+                    
+                    const handleForce = () => {
+                        cleanup();
+                        resolve(addClient(data));
+                    };
+                    
+                    const handleCancel = () => {
+                        cleanup();
+                        showToast('Ajout annulé (doublon détecté).', 'info');
+                        resolve(null);
+                    };
+                    
+                    const cleanup = () => {
+                        modal.classList.add('hidden');
+                        btnForce.removeEventListener('click', handleForce);
+                        btnCancel.removeEventListener('click', handleCancel);
+                    };
+                    
+                    btnForce.addEventListener('click', handleForce);
+                    btnCancel.addEventListener('click', handleCancel);
+                } else {
+                    // Fallback si la modale n'est pas dispo
+                    resolve(addClient(data));
+                }
+            } else {
+                resolve(addClient(data));
+            }
+        });
+    }
+
     function updateClient(id, updates) {
         const clients = getAllClients();
         const idx = clients.findIndex(c => c.id === id);
         if (idx === -1) return null;
-
-        const newBase = updates.montantBase !== undefined ? updates.montantBase : clients[idx].montantBase;
-        const newAnnexes = updates.fraisAnnexes !== undefined ? updates.fraisAnnexes : clients[idx].fraisAnnexes;
-        const newDepl = updates.deplacement !== undefined ? updates.deplacement : clients[idx].deplacement;
-        const newTtc = updates.montantTTC !== undefined ? updates.montantTTC : clients[idx].montantTTC;
-
-        updates.montantTTC = newTtc;
-
         Object.assign(clients[idx], updates);
         saveAllClients(clients);
         return clients[idx];
@@ -188,16 +276,7 @@
     }
 
     // ─── Objective ───
-    function getObjective() {
-        const val = localStorage.getItem(OBJECTIVE_KEY);
-        if (val === null) return 10; // Default if never set
-        const n = Number(val);
-        return n > 0 ? n : 10; // Avoid 0 or negative
-    }
-
-    function setObjective(val) {
-        localStorage.setItem(OBJECTIVE_KEY, val);
-    }
+    // Les objectifs sont calculés dynamiquement sur la base des fiches effectuées dans la période affichée.
 
     // ─── Priority & Status ───
     const PRIORITY_ORDER = { urgent: 0, moyen: 1, normal: 2 };
@@ -235,22 +314,21 @@
         const clients = getAllClients().filter(c => c.date >= start && c.date <= end);
         const doneClients = clients.filter(c => c.statut === 'effectue');
 
-        const totalExpected = clients.reduce((s, c) => s + (Number(c.montantTTC) || 0), 0);
-        const totalRealised = doneClients.reduce((s, c) => s + (Number(c.montantTTC) || 0), 0);
+        const totalExpected = clients.reduce((s, c) => s + (Number(c.montantBase) || 0), 0);
+        const totalRealised = doneClients.reduce((s, c) => s + (Number(c.montantBase) || 0), 0);
 
-        // Use user set objective if it's today filter, or default to expected
-        const objectiveGoal = getObjective();
-        const targetGoal = (start === end && start === todayStr() && objectiveGoal > 0) ? objectiveGoal : totalExpected;
+        const totalClients = clients.length;
+        const doneCount = doneClients.length;
 
-        const rate = targetGoal > 0 ? Math.round((totalRealised / targetGoal) * 100) : 0;
+        const rate = totalClients > 0 ? Math.round((doneCount / totalClients) * 100) : 0;
 
-        $('#kpi-total-clients').textContent = clients.length;
-        $('#kpi-done').textContent = doneClients.length;
+        $('#kpi-total-clients').textContent = totalClients;
+        $('#kpi-done').textContent = doneCount;
         $('#kpi-rate').textContent = rate + '%';
         if ($('#kpi-ca')) $('#kpi-ca').textContent = formatMoney(totalRealised);
 
         if ($('#progress-fill')) $('#progress-fill').style.width = Math.min(rate, 100) + '%';
-        if ($('#progress-text')) $('#progress-text').textContent = `${formatMoney(totalRealised)} / ${formatMoney(targetGoal)} réalisé`;
+        if ($('#progress-text')) $('#progress-text').textContent = `${doneCount} / ${totalClients} interventions réalisées`;
         if ($('#progress-pct')) $('#progress-pct').textContent = rate + '%';
 
         const counts = {
@@ -272,35 +350,40 @@
 
         updateSidebarProgress();
 
-        // ─── Financial Summary Cards (Dashboard) ───
-        const dashTotalFactures = clients.reduce((s, c) => s + (Number(c.montantBase) || 0), 0);
-        const dashTotalAnnexes = clients.reduce((s, c) => s + (Number(c.fraisAnnexes) || 0), 0);
-        const dashTotalDeplacement = clients.reduce((s, c) => s + (Number(c.deplacement) || 0), 0);
-        const dashTotalTTC = clients.reduce((s, c) => s + (Number(c.montantTTC) || 0), 0);
+        // ─── Financial Summary Cards (Dashboard) ─── combiné en une seule passe
+        const totals = clients.reduce((acc, c) => {
+            acc.factures += Number(c.montantBase) || 0;
+            acc.annexes  += Number(c.fraisAnnexes) || 0;
+            acc.depl     += Number(c.deplacement) || 0;
+            acc.ttc      += calcTTC(c);
+            return acc;
+        }, { factures: 0, annexes: 0, depl: 0, ttc: 0 });
 
-        if ($('#dash-total-factures')) $('#dash-total-factures').textContent = formatMoney(dashTotalFactures);
-        if ($('#dash-total-annexes')) $('#dash-total-annexes').textContent = formatMoney(dashTotalAnnexes);
-        if ($('#dash-total-deplacement')) $('#dash-total-deplacement').textContent = formatMoney(dashTotalDeplacement);
-        if ($('#dash-total-ttc')) $('#dash-total-ttc').textContent = formatMoney(dashTotalTTC);
+        if ($('#dash-total-factures'))    $('#dash-total-factures').textContent    = formatMoney(totals.factures);
+        if ($('#dash-total-annexes'))     $('#dash-total-annexes').textContent     = formatMoney(totals.annexes);
+        if ($('#dash-total-deplacement')) $('#dash-total-deplacement').textContent = formatMoney(totals.depl);
+        if ($('#dash-total-ttc'))         $('#dash-total-ttc').textContent         = formatMoney(totals.ttc);
     }
 
-    function updateSidebarProgress() {
-        const today = todayStr();
-        const all = getAllClients();
-        const todayClients = all.filter(c => c.date === today);
-        const doneToday = todayClients.filter(c => c.statut === 'effectue');
+    /** @deprecated Le widget sidebar a été supprimé. Cette fonction ne fait rien si les éléments sont absents. */
+    function updateSidebarProgress(done, total) {
+        const textEl = $('#sidebar-progress-text');
+        const pctEl  = $('#sidebar-progress-pct');
+        const barEl  = $('#sidebar-progress-bar');
+        if (!textEl && !pctEl && !barEl) return; // Widget absent, sortie rapide
 
-        const totalPotential = todayClients.reduce((s, c) => s + parseAmt(c.montantTTC), 0);
-        const totalRealised = doneToday.reduce((s, c) => s + parseAmt(c.montantTTC), 0);
-        
-        const objectiveGoal = getObjective();
-        const targetGoal = objectiveGoal > 0 ? objectiveGoal : (totalPotential > 0 ? totalPotential : 10);
-        
-        const rate = targetGoal > 0 ? Math.round((totalRealised / targetGoal) * 100) : 0;
-
-        if ($('#sidebar-progress-text')) $('#sidebar-progress-text').textContent = `${formatMoney(totalRealised)} / ${formatMoney(targetGoal)}`;
-        if ($('#sidebar-progress-pct')) $('#sidebar-progress-pct').textContent = rate + '%';
-        if ($('#sidebar-progress-bar')) $('#sidebar-progress-bar').style.width = Math.min(rate, 100) + '%';
+        if (done === undefined || total === undefined) {
+            const start = ($('#dash-start-date') && $('#dash-start-date').value) || todayStr();
+            const end   = ($('#dash-end-date')   && $('#dash-end-date').value)   || todayStr();
+            const all   = getAllClients();
+            const period = all.filter(c => c.date >= start && c.date <= end);
+            done  = period.filter(c => c.statut === 'effectue').length;
+            total = period.length;
+        }
+        const rate = total > 0 ? Math.round((done / total) * 100) : 0;
+        if (textEl) textEl.textContent = `${done} / ${total}`;
+        if (pctEl)  pctEl.textContent  = rate + '%';
+        if (barEl)  barEl.style.width  = Math.min(rate, 100) + '%';
     }
 
     function renderClientList() {
@@ -316,23 +399,30 @@
         if (searchQuery) {
             const q = searchQuery.toLowerCase();
             clients = clients.filter(c =>
-                (c.nom || '').toLowerCase().includes(q) ||
+                (c.nomClient || '').toLowerCase().includes(q) ||
                 (c.codeClient || '').toLowerCase().includes(q) ||
                 (c.telephone || '').toLowerCase().includes(q) ||
-                (c.marketeur || '').toLowerCase().includes(q)
+                (c.codeMarketeur || '').toLowerCase().includes(q)
             );
         }
 
-        // ─── Financial Summary Cards (Client List) ───
-        const clTotalFactures = clients.reduce((s, c) => s + (Number(c.montantBase) || 0), 0);
-        const clTotalAnnexes = clients.reduce((s, c) => s + (Number(c.fraisAnnexes) || 0), 0);
-        const clTotalDeplacement = clients.reduce((s, c) => s + (Number(c.deplacement) || 0), 0);
-        const clTotalTTC = clients.reduce((s, c) => s + (Number(c.montantTTC) || 0), 0);
+        // ─── Financial Summary (Client List) ─── combiné en une seule passe
+        const clTotals = clients.reduce((acc, c) => {
+            acc.factures += Number(c.montantBase) || 0;
+            acc.annexes  += Number(c.fraisAnnexes) || 0;
+            acc.depl     += Number(c.deplacement) || 0;
+            acc.ttc      += calcTTC(c);
+            return acc;
+        }, { factures: 0, annexes: 0, depl: 0, ttc: 0 });
 
-        if ($('#cl-total-factures')) $('#cl-total-factures').textContent = formatMoney(clTotalFactures);
-        if ($('#cl-total-annexes')) $('#cl-total-annexes').textContent = formatMoney(clTotalAnnexes);
-        if ($('#cl-total-deplacement')) $('#cl-total-deplacement').textContent = formatMoney(clTotalDeplacement);
-        if ($('#cl-total-ttc')) $('#cl-total-ttc').textContent = formatMoney(clTotalTTC);
+        if ($('#cl-total-factures'))    $('#cl-total-factures').textContent    = formatMoney(clTotals.factures);
+        if ($('#cl-total-annexes'))     $('#cl-total-annexes').textContent     = formatMoney(clTotals.annexes);
+        if ($('#cl-total-deplacement')) $('#cl-total-deplacement').textContent = formatMoney(clTotals.depl);
+        if ($('#cl-total-ttc'))         $('#cl-total-ttc').textContent         = formatMoney(clTotals.ttc);
+
+        const doneInList = clients.filter(c => c.statut === 'effectue').length;
+        const totalInList = clients.length;
+        updateSidebarProgress(doneInList, totalInList);
 
         const tbody = $('#clients-tbody');
         tbody.innerHTML = '';
@@ -347,14 +437,18 @@
             clients.forEach(c => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td><span class="code-pill">${c.codeClient || '-'}</span></td>
-                    <td>${c.telephone || '-'}</td>
                     <td>${c.date || '-'}</td>
+                    <td><span class="code-pill">${c.codeClient || '-'}</span></td>
+                    <td><span class="code-pill">${c.codeAgent || '-'}</span></td>
+                    <td>${c.codeMarketeur || '-'}</td>
+                    <td class="font-bold">${c.nomClient || '-'}</td>
+                    <td>${c.telephone || '-'}</td>
                     <td>${c.intervention || '-'}</td>
                     <td>${formatMoney(c.montantBase)}</td>
+                    <td style="color: var(--warning);">${formatMoney(c.commission)}</td>
                     <td>${formatMoney(c.fraisAnnexes)}</td>
-                    <td class="font-bold highlight-ttc">${formatMoney(c.montantTTC)}</td>
                     <td>${formatMoney(c.deplacement)}</td>
+                    <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${c.commentaire || ''}">${c.commentaire || '-'}</td>
                     <td><button class="status-badge status-${c.statut}" onclick="window.cycleStatus('${c.id}')">${formatStatus(c.statut)}</button></td>
                     <td>
                         <div class="action-btns">
@@ -395,7 +489,7 @@
             sortedDates.forEach(date => {
                 const dayClients = datesMap[date];
                 const done = dayClients.filter(c => c.statut === 'effectue');
-                const ca = dayClients.reduce((s, c) => s + (c.statut === 'effectue' ? parseAmt(c.montantTTC) : 0), 0);
+                const ca = dayClients.reduce((s, c) => s + (c.statut === 'effectue' ? (Number(c.montantBase) || 0) : 0), 0);
 
                 const card = document.createElement('div');
                 card.className = 'history-card';
@@ -421,8 +515,8 @@
         const clients = getAllClients().filter(c => c.date === date);
         const doneClients = clients.filter(c => c.statut === 'effectue');
         
-        const totalExpected = clients.reduce((s, c) => s + (Number(c.montantTTC) || 0), 0);
-        const totalRealised = doneClients.reduce((s, c) => s + (Number(c.montantTTC) || 0), 0);
+        const totalExpected = clients.reduce((s, c) => s + (Number(c.montantBase) || 0), 0);
+        const totalRealised = doneClients.reduce((s, c) => s + (Number(c.montantBase) || 0), 0);
         const rate = totalExpected > 0 ? Math.round((totalRealised / totalExpected) * 100) : 0;
 
         // Header Title
@@ -456,7 +550,7 @@
         const totBase = clients.reduce((s, c) => s + (Number(c.montantBase) || 0), 0);
         const totAnn = clients.reduce((s, r) => s + (Number(r.fraisAnnexes) || 0), 0);
         const totDepl = clients.reduce((s, r) => s + (Number(r.deplacement) || 0), 0);
-        const totTTC = clients.reduce((s, r) => s + (Number(r.montantTTC) || 0), 0);
+        const totTTC = clients.reduce((s, r) => s + calcTTC(r), 0);
 
         if ($('#hd-total-base')) $('#hd-total-base').textContent = formatMoney(totBase);
         if ($('#hd-total-annexes')) $('#hd-total-annexes').textContent = formatMoney(totAnn);
@@ -468,13 +562,18 @@
         if (tbody) {
             tbody.innerHTML = clients.map(c => `
                 <tr>
+                    <td>${c.date || '-'}</td>
                     <td><span class="code-pill">${c.codeClient || '-'}</span></td>
+                    <td><span class="code-pill">${c.codeAgent || '-'}</span></td>
+                    <td>${c.codeMarketeur || '-'}</td>
+                    <td class="font-bold">${c.nomClient || '-'}</td>
                     <td>${c.telephone || '-'}</td>
                     <td title="${c.intervention || ''}">${c.intervention ? (c.intervention.length > 30 ? c.intervention.slice(0, 30) + '...' : c.intervention) : '-'}</td>
                     <td>${formatMoney(c.montantBase)}</td>
+                    <td style="color: var(--warning);">${formatMoney(c.commission)}</td>
                     <td>${formatMoney(c.fraisAnnexes)}</td>
-                    <td class="font-bold highlight-ttc">${formatMoney(c.montantTTC)}</td>
                     <td>${formatMoney(c.deplacement)}</td>
+                    <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${c.commentaire || ''}">${c.commentaire || '-'}</td>
                     <td><button class="status-badge status-${c.statut}" onclick="window.cycleStatus('${c.id}')">${formatStatus(c.statut)}</button></td>
                 </tr>
             `).join('');
@@ -488,11 +587,11 @@
 
         const all = getAllClients().filter(c => c.date >= start && c.date <= end);
         const done = all.filter(c => c.statut === 'effectue');
-        const totalCA = all.reduce((s, c) => s + parseAmt(c.montantTTC), 0);
-        const realisedCA = done.reduce((s, c) => s + parseAmt(c.montantTTC), 0);
+        const totalCA = all.reduce((s, c) => s + (Number(c.montantBase) || 0), 0);
+        const realisedCA = done.reduce((s, c) => s + (Number(c.montantBase) || 0), 0);
         const rate = totalCA > 0 ? Math.round((realisedCA / totalCA) * 100) : 0;
 
-        const lossAmount = all.reduce((s, c) => s + (c.statut !== 'effectue' && c.statut !== 'annule' ? parseAmt(c.montantTTC) : 0), 0);
+        const lossAmount = all.reduce((s, c) => s + (c.statut !== 'effectue' && c.statut !== 'annule' ? (Number(c.montantBase) || 0) : 0), 0);
         const lossRate = totalCA > 0 ? Math.round((lossAmount / totalCA) * 100) : 0;
 
         // --- Basic Summary ---
@@ -528,7 +627,8 @@
         if (label) {
             if (score >= 18) { label.textContent = 'Excellent'; label.style.color = '#22c55e'; }
             else if (score >= 14) { label.textContent = 'Très Bien'; label.style.color = '#10b981'; }
-            else if (score >= 10) { label.textContent = 'Correct'; label.style.color = '#eab308'; }
+            else if (score >= 10) { label.textContent = 'Bien'; label.style.color = '#3b82f6'; }
+            else if (score >= 6) { label.textContent = 'Passable'; label.style.color = '#eab308'; }
             else { label.textContent = 'Insuffisant'; label.style.color = '#ef4444'; }
         }
 
@@ -565,7 +665,7 @@
         // Fill actual data (only for 'effectue')
         clients.forEach(c => {
             if (c.statut === 'effectue' && caByDate[c.date] !== undefined) {
-                caByDate[c.date] += (Number(c.montantTTC) || 0);
+                caByDate[c.date] += (Number(c.montantBase) || 0);
             }
         });
 
@@ -796,27 +896,11 @@
             });
         }
 
+        // Objectif manuel retiré : La logique est maintenant basée sur le comptage des fiches
         const objectiveInput = $('#objective-input');
         if (objectiveInput) {
-            objectiveInput.value = getObjective();
-            objectiveInput.addEventListener('change', (e) => {
-                const val = Number(e.target.value) || 0;
-                setObjective(val);
-                renderDashboard(); // Re-render to update percentages
-                showToast('Objectif mis à jour', 'success');
-            });
-
-            // Allow clicking on the header to show the input
-            const objHeader = $('.objective-header h2');
-            if (objHeader) {
-                objHeader.style.cursor = 'pointer';
-                objHeader.addEventListener('click', () => {
-                    const editDiv = $('.objective-edit');
-                    if (editDiv) editDiv.style.display = editDiv.style.display === 'none' ? 'block' : 'none';
-                });
-            }
+            objectiveInput.parentElement.style.display = 'none';
         }
-
         const btnDashToday = $('#btn-dash-today');
         if (btnDashToday) {
             btnDashToday.addEventListener('click', () => {
@@ -852,7 +936,7 @@
         $$('.nav-btn').forEach(btn => btn.addEventListener('click', () => {
             const screen = btn.dataset.screen;
             // Pré-remplir la date si on va vers le formulaire d'ajout
-            if (screen === 'add-client') {
+            if (screen === 'clients') {
                 if ($('#input-date')) $('#input-date').value = viewDate;
                 if ($('#add-screen-date')) $('#add-screen-date').value = viewDate;
             }
@@ -869,15 +953,20 @@
             $('#sidebar-overlay').classList.remove('show');
         });
 
-        $('#btn-goto-add').addEventListener('click', () => {
-            // Pré-remplir la date du formulaire avec la date de la vue actuelle
-            if ($('#input-date')) $('#input-date').value = viewDate;
-            switchScreen('add-client');
-        });
-        $('#btn-empty-add').addEventListener('click', () => {
-            if ($('#input-date')) $('#input-date').value = viewDate;
-            switchScreen('add-client');
-        });
+        // ─── Toggle Add Client Form ───
+        const btnToggleForm = $('#btn-toggle-add-form');
+        const addContainer = $('#add-client-container');
+        if (btnToggleForm && addContainer) {
+            btnToggleForm.addEventListener('click', () => {
+                addContainer.classList.toggle('hidden');
+                btnToggleForm.classList.toggle('btn-ghost');
+                if (!addContainer.classList.contains('hidden')) {
+                    $('#add-screen-date').value = viewDate;
+                    $('#input-date').value = viewDate;
+                    addContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        }
 
         // ─── Export Dropdown ───
         $('#btn-export-toggle').addEventListener('click', (e) => {
@@ -930,9 +1019,9 @@
         const btnImportPdf = $('#btn-import-pdf');
         if (btnImportPdf) btnImportPdf.addEventListener('click', () => { $('#import-menu').classList.add('hidden'); $('#input-import-pdf').click(); });
 
-        // Restore button (JSON Backup)
-        const btnRestore = $('#btn-import-data');
-        if (btnRestore) btnRestore.addEventListener('click', () => { $('#input-import-json').click(); });
+        // Restore from JSON (inside import dropdown)
+        const btnJsonRestore = $('#btn-import-json-restore');
+        if (btnJsonRestore) btnJsonRestore.addEventListener('click', () => { $('#import-menu').classList.add('hidden'); $('#input-import-json').click(); });
 
 
         // ── Excel import handler ──
@@ -1031,7 +1120,8 @@
             btn.addEventListener('click', (e) => {
                 const target = e.currentTarget.dataset.screen;
                 // Pré-remplir la date si on va vers le formulaire d'ajout
-                if (target === 'add-client') {
+                // Pré-remplir la date si on va vers le module de gestion des clients
+                if (target === 'clients') {
                     if ($('#input-date')) $('#input-date').value = viewDate;
                     if ($('#add-screen-date')) $('#add-screen-date').value = viewDate;
                 }
@@ -1127,7 +1217,7 @@
                         <td>${c.date}</td>
                         <td>${c.codeClient || ''}</td>
                         <td>${c.intervention || ''}</td>
-                        <td>${formatMoney(c.montantTTC || 0)}</td>
+                        <td>${formatMoney(c.montantBase || 0)}</td>
                         <td>${c.statut || ''}</td>
                     </tr>`;
                 });
@@ -1217,19 +1307,58 @@
             });
         });
 
-        $('#client-form').addEventListener('submit', (e) => {
+        // ─── Clear Current List ───
+        const btnClearList = $('#btn-clear-current-list');
+        if (btnClearList) {
+            btnClearList.addEventListener('click', () => {
+                const start = ($('#clients-start-date') && $('#clients-start-date').value) || todayStr();
+                const end = ($('#clients-end-date') && $('#clients-end-date').value) || todayStr();
+
+                let currentFiltered = getAllClients().filter(c => c.date >= start && c.date <= end);
+                if (filterStatus !== 'all') {
+                    currentFiltered = currentFiltered.filter(c => c.statut === filterStatus);
+                }
+                if (searchQuery) {
+                    const q = searchQuery.toLowerCase();
+                    currentFiltered = currentFiltered.filter(c =>
+                        (c.nomClient || '').toLowerCase().includes(q) ||
+                        (c.codeClient || '').toLowerCase().includes(q) ||
+                        (c.telephone || '').toLowerCase().includes(q) ||
+                        (c.codeMarketeur || '').toLowerCase().includes(q)
+                    );
+                }
+
+                if (currentFiltered.length === 0) return;
+
+                const idsToRemove = currentFiltered.map(c => c.id);
+                let allClients = getAllClients().filter(c => !idsToRemove.includes(c.id));
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(allClients));
+                
+                showToast(idsToRemove.length + ' fiche(s) supprimée(s)', 'info');
+                renderClientList();
+                renderDashboard();
+                renderHistory();
+                renderPerformance();
+            });
+        }
+
+        $('#client-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const data = {
                 codeClient: $('#input-code-client').value.trim(),
+                codeAgent: $('#input-code-agent').value.trim(),
+                codeMarketeur: $('#input-code-marketeur').value.trim(),
+                nomClient: $('#input-nom-client').value.trim(),
                 telephone: $('#input-telephone').value.trim(),
                 intervention: $('#input-intervention').value.trim(),
-                priorite: $('#input-priorite').value,
-                statut: $('#input-statut').value,
+                priorite: $('#input-priorite') ? $('#input-priorite').value : 'normal',
+                statut: $('#input-statut') ? $('#input-statut').value : 'en_attente',
                 montantBase: $('#input-montant-base').value,
+                commission: $('#input-commission').value,
                 fraisAnnexes: $('#input-montant-annexes').value,
                 deplacement: $('#input-montant-deplacement').value,
-                montantTTC: $('#input-montant-ttc').value,
-                date: $('#input-date').value || $('#add-screen-date').value || todayStr()
+                commentaire: $('#input-commentaire').value.trim(),
+                date: $('#input-date') ? $('#input-date').value : $('#add-screen-date').value || todayStr()
             };
 
             if (!data.telephone || !data.intervention) {
@@ -1237,33 +1366,57 @@
                 return;
             }
 
-            addClient(data);
-            showToast('Nouveau client enregistré ! ✅');
-            e.target.reset();
+            const added = await checkAndAddClient(data);
+            if (added) {
+                showToast('Nouveau client enregistré ! ✅');
+                e.target.reset();
 
-            // Rediriger vers la date à laquelle le client a été créé pour le voir instantanément
-            viewDate = data.date;
-            switchScreen('clients');
+                // Synchroniser les filtres de date sur la date du client ajouté
+                viewDate = data.date;
+                if ($('#clients-start-date')) $('#clients-start-date').value = data.date;
+                if ($('#clients-end-date')) $('#clients-end-date').value = data.date;
+                
+                // Réinitialiser les filtres de statut et de recherche pour garantir l'affichage
+                filterStatus = 'all';
+                searchQuery = '';
+                if ($('#search-input')) $('#search-input').value = '';
+                $$('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.filter === 'all'));
+                
+                switchScreen('clients');
+            }
         });
 
         $('#edit-form').addEventListener('submit', (e) => {
             e.preventDefault();
             const id = $('#edit-id').value;
-            updateClient(id, {
-                date: $('#edit-date').value || todayStr(), // Protection de la date existante
-                codeClient: $('#edit-code-client').value.trim(),
-                telephone: $('#edit-telephone').value.trim(),
-                intervention: $('#edit-intervention').value.trim(),
-                priorite: $('#edit-priorite').value,
-                statut: $('#edit-statut').value,
-                montantBase: Number($('#edit-montant-base').value),
-                fraisAnnexes: Number($('#edit-montant-annexes').value),
-                deplacement: Number($('#edit-montant-deplacement').value),
-                montantTTC: Number($('#edit-montant-ttc').value)
-            });
-            closeEditModal();
-            refresh();
-            showToast('Fiche mise à jour !');
+            const clients = getAllClients();
+            const idx = clients.findIndex(c => c.id === id);
+            if (idx > -1) {
+                // Merge old data with new submitted data
+                const oldClient = clients[idx];
+                const updatedClient = {
+                    ...oldClient,
+                    codeClient: $('#edit-code-client').value.trim(),
+                    codeAgent: $('#edit-code-agent').value.trim(),
+                    codeMarketeur: $('#edit-code-marketeur').value.trim(),
+                    nomClient: $('#edit-nom-client').value.trim(),
+                    telephone: $('#edit-telephone').value.trim(),
+                    intervention: $('#edit-intervention').value.trim(),
+                    priorite: $('#edit-priorite') ? $('#edit-priorite').value : oldClient.priorite,
+                    statut: $('#edit-statut') ? $('#edit-statut').value : oldClient.statut,
+                    montantBase: Number($('#edit-montant-base').value) || 0,
+                    commission: Number($('#edit-commission').value) || 0,
+                    fraisAnnexes: Number($('#edit-montant-annexes').value) || 0,
+                    deplacement: Number($('#edit-montant-deplacement').value) || 0,
+                    commentaire: $('#edit-commentaire').value.trim()
+                };
+
+                clients[idx] = updatedClient;
+                saveAllClients(clients);
+                showToast('Modifications enregistrées ✅');
+                window.closeEditModal();
+                refresh();
+            }
         });
 
         $('#btn-cancel-edit').addEventListener('click', window.closeEditModal);
@@ -1284,7 +1437,7 @@
             }
         });
 
-        $('#btn-parse-save').addEventListener('click', () => {
+        $('#btn-parse-save').addEventListener('click', async () => {
             const text = $('#paste-area').value.trim();
             if (!text) {
                 showToast('Veuillez coller du texte d\'abord', 'info');
@@ -1295,16 +1448,36 @@
             // Ensure the date from the header is used, as WhatsApp paste doesn't provide one
             data.date = $('#add-screen-date').value || viewDate || todayStr();
 
-            if (!data.nom && !data.telephone) {
+            if (!data.nomClient && !data.telephone) {
                 showToast('Format non reconnu. Assurez-vous d\'inclure au moins le Nom et le Téléphone.', 'error');
                 return;
             }
 
-            addClient(data);
-            showToast('Client extrait et ajouté avec succès ! ✅');
-            $('#paste-area').value = '';
-            switchScreen('clients');
+            const added = await checkAndAddClient(data);
+            if (added) {
+                showToast('Client extrait et ajouté avec succès ! ✅');
+                $('#paste-area').value = '';
+
+                // Synchroniser les filtres de date
+                viewDate = data.date;
+                if ($('#clients-start-date')) $('#clients-start-date').value = data.date;
+                if ($('#clients-end-date')) $('#clients-end-date').value = data.date;
+                switchScreen('clients');
+            }
         });
+
+        // ─── Clear Paste Area ───
+        const btnClearPaste = $('#btn-clear-paste');
+        if (btnClearPaste) {
+            btnClearPaste.addEventListener('click', () => {
+                const area = $('#paste-area');
+                if (area) {
+                    area.value = '';
+                    area.focus();
+                    showToast('Zone de collage vidée', 'info');
+                }
+            });
+        }
 
         // ─── Extraction Security Modal Events ───
         const btnXtSecConfirm = $('#xt-security-confirm');
@@ -1347,14 +1520,18 @@
         $('#edit-id').value = c.id;
         $('#edit-date').value = c.date; // Sauvegarder la date d'origine
         $('#edit-code-client').value = c.codeClient || '';
+        $('#edit-code-agent').value = c.codeAgent || '';
+        $('#edit-code-marketeur').value = c.codeMarketeur || '';
+        $('#edit-nom-client').value = c.nomClient || '';
         $('#edit-telephone').value = c.telephone || '';
         $('#edit-intervention').value = c.intervention || '';
-        $('#edit-priorite').value = c.priorite;
-        $('#edit-statut').value = c.statut;
+        if ($('#edit-priorite')) $('#edit-priorite').value = c.priorite;
+        if ($('#edit-statut')) $('#edit-statut').value = c.statut;
         $('#edit-montant-base').value = c.montantBase;
+        $('#edit-commission').value = c.commission || 0;
         $('#edit-montant-annexes').value = c.fraisAnnexes;
         $('#edit-montant-deplacement').value = c.deplacement;
-        $('#edit-montant-ttc').value = c.montantTTC;
+        $('#edit-commentaire').value = c.commentaire || '';
         $('#edit-modal').classList.remove('hidden');
     };
 
@@ -1378,64 +1555,211 @@
     }
 
     function exportToExcel() {
-        const clients = getAllClients();
+        const start = ($('#clients-start-date') && $('#clients-start-date').value) ||
+                      ($('#dash-start-date')   && $('#dash-start-date').value) || todayStr();
+        const end   = ($('#clients-end-date')  && $('#clients-end-date').value) ||
+                      ($('#dash-end-date')     && $('#dash-end-date').value) || todayStr();
+        const clients = getAllClients().filter(c => c.date >= start && c.date <= end);
+
         if (clients.length === 0) {
-            showToast('Aucune donnée à exporter', 'info');
+            showToast('Aucune donnée à exporter pour cette période', 'info');
             return;
         }
+
         const rows = clients.map(c => ({
-            'Date': c.date,
-            'Code Client': c.codeClient,
-            'Téléphone': c.telephone,
-            'Service': c.intervention,
-            'Facture': c.montantBase,
-            'Frais Annexes': c.fraisAnnexes,
-            'Facture TTC': c.montantTTC,
-            'Déplacement': c.deplacement,
-            'Priorité': c.priorite,
-            'Statut': c.statut
+            'Date':          c.date,
+            'Code Client':   c.codeClient || '-',
+            'Code Agent':    c.codeAgent || '-',
+            'Code Marketeur':c.codeMarketeur || '-',
+            'Nom Client':    c.nomClient || '-',
+            'Contact Client':c.telephone || '-',
+            'Prestation':    c.intervention || '-',
+            'Facture (F)':   Number(c.montantBase) || 0,
+            'Commission (F)':Number(c.commission) || 0,
+            'Frais Ann. (F)':Number(c.fraisAnnexes) || 0,
+            'Dépl. (F)':     Number(c.deplacement) || 0,
+            'Commentaire':   c.commentaire || '-',
+            'Statut':        c.statut || '-'
         }));
+
         const ws = XLSX.utils.json_to_sheet(rows);
+
+        // Largeurs de colonnes adaptées
+        ws['!cols'] = [
+            { wch: 12 }, // Date
+            { wch: 14 }, // Code Client
+            { wch: 14 }, // Code Agent
+            { wch: 16 }, // Code Marketeur
+            { wch: 20 }, // Nom
+            { wch: 16 }, // Contact
+            { wch: 28 }, // Prestation
+            { wch: 14 }, // Facture
+            { wch: 14 }, // Commission
+            { wch: 14 }, // Frais
+            { wch: 14 }, // Dépl
+            { wch: 25 }, // Commentaire
+            { wch: 12 }  // Statut
+        ];
+
+        // Onglet Résumé
+        const done      = clients.filter(c => c.statut === 'effectue').length;
+        const totBase   = clients.reduce((s, c) => s + (Number(c.montantBase)  || 0), 0);
+        const totCom    = clients.reduce((s, c) => s + (Number(c.commission)   || 0), 0);
+        const totAnn    = clients.reduce((s, c) => s + (Number(c.fraisAnnexes) || 0), 0);
+        const totDepl   = clients.reduce((s, c) => s + (Number(c.deplacement)  || 0), 0);
+        const rate      = clients.length > 0 ? Math.round((done / clients.length) * 100) : 0;
+
+        const summaryRows = [
+            { 'Indicateur': 'Période', 'Valeur': `${start} au ${end}` },
+            { 'Indicateur': 'Généré le', 'Valeur': todayStr() },
+            { 'Indicateur': '' , 'Valeur': '' },
+            { 'Indicateur': 'Total Fiches', 'Valeur': clients.length },
+            { 'Indicateur': 'Réalisées', 'Valeur': done },
+            { 'Indicateur': 'Taux de réalisation', 'Valeur': `${rate}%` },
+            { 'Indicateur': '', 'Valeur': '' },
+            { 'Indicateur': 'Total Factures', 'Valeur': totBase },
+            { 'Indicateur': 'Total Commissions', 'Valeur': totCom },
+            { 'Indicateur': 'Total Frais Annexes', 'Valeur': totAnn },
+            { 'Indicateur': 'Total Déplacement', 'Valeur': totDepl }
+        ];
+        const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
+        wsSummary['!cols'] = [{ wch: 22 }, { wch: 20 }];
+
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Clients');
-        XLSX.writeFile(wb, `export_megapro_${todayStr()}.xlsx`);
+
+        // Ajouter une ligne de totaux en bas du tableau de données
+        XLSX.utils.sheet_add_aoa(ws, [[
+            'TOTAUX', '', '', '', '', '', '',
+            totBase, totCom, totAnn, totDepl, '', ''
+        ]], { origin: -1 });
+
+        // Style de la ligne de totaux (gras via un commentaire indicatif)
+        XLSX.utils.book_append_sheet(wb, ws, 'Données');
+        XLSX.utils.book_append_sheet(wb, wsSummary, 'Résumé');
+        XLSX.writeFile(wb, `rapport_megapro_${start}_${end}.xlsx`);
         showToast('Export Excel réussi ✅');
     }
 
     function exportToPDF() {
-        const clients = getAllClients();
+        const start = ($('#clients-start-date') && $('#clients-start-date').value) ||
+                      ($('#dash-start-date')   && $('#dash-start-date').value) || todayStr();
+        const end   = ($('#clients-end-date')  && $('#clients-end-date').value) ||
+                      ($('#dash-end-date')     && $('#dash-end-date').value) || todayStr();
+        const clients = getAllClients().filter(c => c.date >= start && c.date <= end);
+
         if (clients.length === 0) {
-            showToast('Aucune donnée à exporter', 'info');
+            showToast('Aucune donnée à exporter pour cette période', 'info');
             return;
         }
+
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF('landscape', 'mm', 'a4');
-        doc.setFontSize(16);
-        doc.text('Mega Pro – Rapport Clients', 14, 15);
-        doc.setFontSize(9);
-        doc.text(`Généré le ${todayStr()}`, 14, 22);
+        const pageW = doc.internal.pageSize.getWidth();
 
-        const headers = ['Date', 'Code', 'Tél.', 'Service', 'Facture', 'F. Ann.', 'TTC', 'Dépl.', 'Priorité', 'Statut'];
+        // ── En-tête ──
+        doc.setFillColor(30, 20, 60);
+        doc.rect(0, 0, pageW, 30, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(18);
+        doc.setFont('helvetica', 'bold');
+        doc.text('MEGA PRO', 14, 12);
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+        doc.text('Suivi Tech – Rapport Clients', 14, 19);
+        doc.setFontSize(9);
+        doc.text(`Période : ${start} au ${end}`, 14, 26);
+        doc.text(`Généré le : ${todayStr()}`, pageW - 14, 26, { align: 'right' });
+
+        // ── Résumé financier ──
+        const done    = clients.filter(c => c.statut === 'effectue').length;
+        const totBase = clients.reduce((s, c) => s + (Number(c.montantBase)  || 0), 0);
+        const totCom  = clients.reduce((s, c) => s + (Number(c.commission)   || 0), 0);
+        const totAnn  = clients.reduce((s, c) => s + (Number(c.fraisAnnexes) || 0), 0);
+        const totDepl = clients.reduce((s, c) => s + (Number(c.deplacement)  || 0), 0);
+        const rate    = clients.length > 0 ? Math.round((done / clients.length) * 100) : 0;
+
+        doc.setTextColor(30, 20, 60);
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+        const summaryY = 38;
+        doc.setFillColor(245, 243, 255);
+        doc.roundedRect(10, summaryY - 4, pageW - 20, 18, 2, 2, 'F');
+
+        const summItems = [
+            `${clients.length} fiches`,
+            `${done} realisees (${rate}%)`,
+            `Factures : ${formatMoneyPDF(totBase)} F`,
+            `Commissions : ${formatMoneyPDF(totCom)} F`,
+            `Frais Ann. : ${formatMoneyPDF(totAnn)} F`,
+            `Depl. : ${formatMoneyPDF(totDepl)} F`
+        ];
+        const colWidth = (pageW - 20) / summItems.length;
+        summItems.forEach((txt, i) => {
+            doc.setFont('helvetica', i > 1 ? 'normal' : 'bold');
+            doc.text(txt, 14 + i * colWidth, summaryY + 5);
+        });
+
+        // ── Tableau ──
+        const headers = ['Date', 'Code C.', 'Code Ag.', 'Code Mk.', 'Nom', 'Contact', 'Prestation', 'Facture', 'Com.', 'Frais', 'Dépl.', 'Obs.', 'Statut'];
         const rows = clients.map(c => [
-            c.date, c.codeClient, c.telephone, c.intervention,
-            (c.montantBase || 0).toLocaleString('fr-FR'),
-            (c.fraisAnnexes || 0).toLocaleString('fr-FR'),
-            (c.montantTTC || 0).toLocaleString('fr-FR'),
-            (c.deplacement || 0).toLocaleString('fr-FR'),
-            c.priorite, c.statut
+            c.date || '-',
+            c.codeClient || '-',
+            c.codeAgent || '-',
+            c.codeMarketeur || '-',
+            (c.nomClient || '-').substring(0, 15),
+            c.telephone  || '-',
+            (c.intervention || '-').substring(0, 20),
+            formatMoneyPDF(c.montantBase),
+            formatMoneyPDF(c.commission),
+            formatMoneyPDF(c.fraisAnnexes),
+            formatMoneyPDF(c.deplacement),
+            (c.commentaire || '-').substring(0, 15),
+            c.statut || '-'
         ]);
 
         doc.autoTable({
             head: [headers],
             body: rows,
-            startY: 28,
+            startY: summaryY + 18,
             theme: 'grid',
-            headStyles: { fillColor: [0, 145, 255], fontSize: 8 },
-            bodyStyles: { fontSize: 7 },
-            alternateRowStyles: { fillColor: [240, 245, 255] }
+            headStyles: {
+                fillColor:  [60, 30, 120],
+                textColor:  255,
+                fontStyle:  'bold',
+                fontSize:   7,
+                halign:     'center'
+            },
+            bodyStyles: { fontSize: 6.5, cellPadding: 1.5 },
+            alternateRowStyles: { fillColor: [248, 245, 255] },
+            columnStyles: {
+                0: { cellWidth: 16 },
+                1: { cellWidth: 16 },
+                2: { cellWidth: 16 },
+                3: { cellWidth: 16 },
+                4: { cellWidth: 26 },
+                5: { cellWidth: 22 },
+                6: { cellWidth: 'auto' },
+                7: { halign: 'right', cellWidth: 18 },
+                8: { halign: 'right', cellWidth: 16 },
+                9: { halign: 'right', cellWidth: 16 },
+                10: { halign: 'right', cellWidth: 16 },
+                11: { cellWidth: 20 },
+                12: { cellWidth: 18, halign: 'center' }
+            },
+            didDrawPage: (data) => {
+                // Pied de page
+                const pageCount = doc.internal.getNumberOfPages();
+                doc.setFontSize(7);
+                doc.setTextColor(150);
+                doc.text(
+                    `Page ${data.pageNumber} / ${pageCount}  –  Mega Pro © ${new Date().getFullYear()}`,
+                    pageW / 2, doc.internal.pageSize.getHeight() - 6,
+                    { align: 'center' }
+                );
+            }
         });
 
-        doc.save(`export_megapro_${todayStr()}.pdf`);
+        doc.save(`rapport_megapro_${start}_${end}.pdf`);
         showToast('Export PDF réussi ✅');
     }
 
@@ -1445,14 +1769,22 @@
             showToast('Aucune donnée à exporter', 'info');
             return;
         }
-        const headers = ['Date', 'Code Client', 'Téléphone', 'Intervention', 'Facture Base', 'Frais Annexes', 'Déplacement', 'Facture TTC', 'Priorité', 'Statut'];
+        const headers = ['Date', 'Code Client', 'Code Agent', 'Code Marketeur', 'Nom Client', 'Contact Client', 'Prestation', 'Facture', 'Commission', 'Frais Annexes', 'Déplacement', 'Commentaire', 'Statut'];
         let csvContent = '\uFEFF' + headers.join(';') + '\n';
         clients.forEach(c => {
-            const row = [c.date, c.codeClient, c.telephone, c.intervention, c.montantBase, c.fraisAnnexes, c.deplacement, c.montantTTC, c.priorite, c.statut]
+            const row = [c.date, c.codeClient, c.codeAgent, c.codeMarketeur, c.nomClient, c.telephone, c.intervention, c.montantBase, c.commission, c.fraisAnnexes, c.deplacement, c.commentaire, c.statut]
                 .map(v => `"${(v || '').toString().replace(/"/g, '""')}"`)
                 .join(';');
             csvContent += row + '\n';
         });
+
+        // Ligne de totaux
+        const totBase = clients.reduce((s, c) => s + (Number(c.montantBase) || 0), 0);
+        const totCom  = clients.reduce((s, c) => s + (Number(c.commission) || 0), 0);
+        const totAnn  = clients.reduce((s, c) => s + (Number(c.fraisAnnexes) || 0), 0);
+        const totDepl = clients.reduce((s, c) => s + (Number(c.deplacement) || 0), 0);
+        const totalsRow = ['"TOTAUX"', '""', '""', '""', '""', '""', '""', `"${totBase}"`, `"${totCom}"`, `"${totAnn}"`, `"${totDepl}"`, '""', '""'].join(';');
+        csvContent += totalsRow + '\n';
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -1487,20 +1819,27 @@
     const HEADER_MAP = {
         'date': 'date',
         'code client': 'codeClient', 'code': 'codeClient', 'id client': 'codeClient',
-        'téléphone': 'telephone', 'telephone': 'telephone', 'tél.': 'telephone', 'tel': 'telephone', 'contact': 'telephone',
+        'code agent': 'codeAgent', 'code ag.': 'codeAgent',
+        'code marketeur': 'codeMarketeur', 'code mk.': 'codeMarketeur', 'marketeur': 'codeMarketeur',
+        'nom client': 'nomClient', 'nom': 'nomClient',
+        'téléphone': 'telephone', 'telephone': 'telephone', 'tél.': 'telephone', 'tel': 'telephone', 'contact': 'telephone', 'contact client': 'telephone',
         'service': 'intervention', 'intervention': 'intervention', 'prestation': 'intervention',
-        'facture': 'montantBase', 'facture base': 'montantBase', 'montant base': 'montantBase',
-        'frais annexes': 'fraisAnnexes', 'f. ann.': 'fraisAnnexes', 'annexe': 'fraisAnnexes', 'annexes': 'fraisAnnexes',
-        'facture ttc': 'montantTTC', 'ttc': 'montantTTC', 'total ttc': 'montantTTC',
-        'déplacement': 'deplacement', 'deplacement': 'deplacement', 'dépl.': 'deplacement', 'trajet': 'deplacement',
+        'facture': 'montantBase', 'facture base': 'montantBase', 'montant base': 'montantBase', 'facture (f)': 'montantBase',
+        'commission': 'commission', 'commission (f)': 'commission', 'com.': 'commission',
+        'frais annexes': 'fraisAnnexes', 'f. ann.': 'fraisAnnexes', 'annexe': 'fraisAnnexes', 'annexes': 'fraisAnnexes', 'frais ann. (f)': 'fraisAnnexes',
+        'déplacement': 'deplacement', 'deplacement': 'deplacement', 'dépl.': 'deplacement', 'trajet': 'deplacement', 'dépl. (f)': 'deplacement',
+        'commentaire': 'commentaire', 'obs.': 'commentaire',
+        'code s': 'codeS',
         'priorité': 'priorite', 'priorite': 'priorite',
         'statut': 'statut', 'status': 'statut'
     };
 
     function mapRowToClient(row) {
         const client = {
-            codeClient: '', telephone: '', intervention: '',
-            montantBase: 0, fraisAnnexes: 0, montantTTC: 0, deplacement: 0,
+            codeClient: '', codeAgent: '', codeMarketeur: '', codeS: '',
+            nomClient: '', telephone: '', intervention: '',
+            montantBase: 0, commission: 0, fraisAnnexes: 0, deplacement: 0,
+            commentaire: '',
             priorite: 'normal', statut: 'en_attente', date: todayStr()
         };
         for (const [key, value] of Object.entries(row)) {
@@ -1508,7 +1847,7 @@
             const field = HEADER_MAP[normalizedKey];
             if (!field) continue;
 
-            if (['montantBase', 'fraisAnnexes', 'montantTTC', 'deplacement'].includes(field)) {
+            if (['montantBase', 'commission', 'fraisAnnexes', 'deplacement'].includes(field)) {
                 // Parse numeric: remove currency symbols, spaces, handle French formatting
                 let num = String(value || '').replace(/[^\d.,-]/g, '').replace(/\s/g, '');
                 // Handle French decimal separator
@@ -1529,7 +1868,7 @@
 
     function importFromSpreadsheet(file, formatName) {
         const reader = new FileReader();
-        reader.onload = function (event) {
+        reader.onload = async function (event) {
             try {
                 const data = new Uint8Array(event.target.result);
                 const workbook = XLSX.read(data, { type: 'array' });
@@ -1542,13 +1881,13 @@
                 }
 
                 let importedCount = 0;
-                rows.forEach(row => {
+                for (const row of rows) {
                     const clientData = mapRowToClient(row);
                     // Skip rows that have no identifying data at all
-                    if (!clientData.codeClient && !clientData.telephone && !clientData.intervention) return;
-                    addClient(clientData);
-                    importedCount++;
-                });
+                    if (!clientData.codeClient && !clientData.telephone && !clientData.intervention) continue;
+                    const added = await checkAndAddClient(clientData);
+                    if (added) importedCount++;
+                }
 
                 refresh();
                 showToast(`Import ${formatName} réussi : ${importedCount} client(s) ajouté(s) ✅`);
@@ -1581,28 +1920,18 @@
                     fullText += pageText + '\n';
                 }
 
-                // Try to parse the table from the PDF text
-                // The export format has headers: Date, Code, Tél., Service, Facture, F. Ann., TTC, Dépl., Priorité, Statut
                 const PDF_HEADERS = ['Date', 'Code', 'Tél.', 'Service', 'Facture', 'F. Ann.', 'TTC', 'Dépl.', 'Priorité', 'Statut'];
-
-                // Split text into lines and find lines with data patterns
                 const lines = fullText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-
                 let importedCount = 0;
 
                 for (const line of lines) {
-                    // Try to match a date pattern at the start of the line (YYYY-MM-DD)
                     const dateMatch = line.match(/(\d{4}-\d{2}-\d{2})/);
                     if (!dateMatch) continue;
-
-                    // Skip header lines or title lines
                     if (line.includes('Mega Pro') || line.includes('Généré le')) continue;
 
-                    // Extract data by splitting on whitespace groups
                     const parts = line.split(/\s{2,}|\t/);
                     if (parts.length < 5) continue;
 
-                    // Map parts to client fields based on the exported PDF format
                     const row = {};
                     PDF_HEADERS.forEach((header, idx) => {
                         if (idx < parts.length) {
@@ -1612,13 +1941,11 @@
 
                     const clientData = mapRowToClient(row);
                     if (!clientData.codeClient && !clientData.telephone && !clientData.intervention) continue;
-                    addClient(clientData);
-                    importedCount++;
+                    const added = await checkAndAddClient(clientData);
+                    if (added) importedCount++;
                 }
 
                 if (importedCount === 0) {
-                    // Fallback: try line-by-line parsing with date detection
-                    // The PDF table often concatenates cells differently
                     const allText = fullText.replace(/\n/g, ' ');
                     const dateSegments = allText.split(/(?=\d{4}-\d{2}-\d{2})/);
 
@@ -1628,7 +1955,6 @@
 
                         const rest = segment.slice(10).trim();
                         const tokens = rest.split(/\s+/);
-
                         if (tokens.length < 4) continue;
 
                         const clientData = {
@@ -1638,7 +1964,7 @@
                             intervention: tokens[2] || '',
                             montantBase: Number(String(tokens[3] || '0').replace(/[^\d]/g, '')) || 0,
                             fraisAnnexes: Number(String(tokens[4] || '0').replace(/[^\d]/g, '')) || 0,
-                            montantTTC: Number(String(tokens[5] || '0').replace(/[^\d]/g, '')) || 0,
+                            commission: Number(String(tokens[5] || '0').replace(/[^\d]/g, '')) || 0,
                             deplacement: Number(String(tokens[6] || '0').replace(/[^\d]/g, '')) || 0,
                             priorite: tokens[7] || 'normal',
                             statut: tokens[8] || 'en_attente'
@@ -1664,6 +1990,132 @@
         reader.readAsArrayBuffer(file);
     }
 
+    function importExtractionFromJSON(file) {
+        const reader = new FileReader();
+        reader.onload = function (event) {
+            try {
+                const importedData = JSON.parse(event.target.result);
+                if (!Array.isArray(importedData)) {
+                    throw new Error('Format invalide : le fichier doit contenir un tableau de clients.');
+                }
+
+                const newRows = importedData.map(c => ({
+                    id: generateId(),
+                    codeClient: c.codeClient || '',
+                    codeAgent: c.codeAgent || '',
+                    codeMarketeur: c.codeMarketeur || '',
+                    nomClient: c.nomClient || c.nom || '',
+                    contact: c.contact || c.telephone || '',
+                    facture: Number(c.facture || c.montantBase) || 0,
+                    commission: Number(c.commission) || 0,
+                    fraisAnnexes: Number(c.fraisAnnexes) || 0,
+                    deplacement: Number(c.deplacement) || 0,
+                    commentaire: c.commentaire || '',
+                    date: c.date || todayStr()
+                }));
+
+                extractedRows = [...extractedRows, ...newRows];
+                renderExtractionTable();
+                showToast(`Import JSON réussi : ${newRows.length} fiche(s) ajoutée(s) ✅`);
+            } catch (err) {
+                console.error(err);
+                showToast('Erreur lors de l\'import JSON : ' + err.message, 'error');
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    /** Importe un fichier Excel (.xlsx) dans l'Outil d'Extraction */
+    function importExtractionFromExcel(file) {
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            try {
+                const wb   = XLSX.read(e.target.result, { type: 'array' });
+                const ws   = wb.Sheets[wb.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+                if (!rows.length) { showToast('Fichier Excel vide ou non reconnu', 'info'); return; }
+
+                const newRows = rows.map(r => ({
+                    id:           generateId(),
+                    codeClient:   r['Code Client'] || r['code client'] || r['Code C.'] || '',
+                    codeAgent:    r['Code Agent'] || r['Code Ag.'] || '',
+                    codeMarketeur:r['Code Marketeur'] || r['Code Mk.'] || '',
+                    nomClient:    r['Nom Client'] || r['Nom'] || '',
+                    contact:      r['Contact Client'] || r['Contact'] || r['Téléphone'] || '',
+                    service:      r['Prestation'] || r['Service'] || r['Intervention'] || '',
+                    facture:      parseAmt(r['Facture (F)'] || r['Facture'] || 0),
+                    commission:   parseAmt(r['Commission (F)'] || r['Commission'] || r['Com.'] || 0),
+                    fraisAnnexes: parseAmt(r['Frais Ann. (F)'] || r['Frais Annexes'] || r['Frais'] || 0),
+                    deplacement:  parseAmt(r['Dépl. (F)'] || r['Déplacement (F)'] || r['Déplacement'] || r['Dépl.'] || 0),
+                    commentaire:  r['Commentaire'] || r['Obs.'] || '',
+                    date:         r['Date'] || todayStr()
+                }));
+
+                extractedRows = [...extractedRows, ...newRows];
+                renderExtractionTable();
+                showToast(`Import Excel réussi : ${newRows.length} fiche(s) ajoutée(s) ✅`);
+            } catch (err) {
+                console.error(err);
+                showToast('Erreur lors de l\'import Excel : ' + err.message, 'error');
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    /** Importe un fichier CSV dans l'Outil d'Extraction */
+    function importExtractionFromCSV(file) {
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            try {
+                const wb   = XLSX.read(e.target.result, { type: 'string', raw: true });
+                const ws   = wb.Sheets[wb.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+                if (!rows.length) { showToast('Fichier CSV vide ou non reconnu', 'info'); return; }
+
+                const newRows = rows.map(r => ({
+                    id:           generateId(),
+                    codeClient:   r['Code Client'] || r['code client'] || r['Code C.'] || '',
+                    codeAgent:    r['Code Agent'] || r['Code Ag.'] || '',
+                    codeMarketeur:r['Code Marketeur'] || r['Code Mk.'] || '',
+                    nomClient:    r['Nom Client'] || r['Nom'] || '',
+                    contact:      r['Contact Client'] || r['Contact'] || r['Téléphone'] || '',
+                    service:      r['Prestation'] || r['Service'] || r['Intervention'] || '',
+                    facture:      parseAmt(r['Facture'] || r['Facture Base'] || r['Facture (F)'] || 0),
+                    commission:   parseAmt(r['Commission (F)'] || r['Commission'] || r['Com.'] || 0),
+                    fraisAnnexes: parseAmt(r['Frais Annexes'] || r['Frais Ann. (F)'] || r['Frais'] || 0),
+                    deplacement:  parseAmt(r['Déplacement'] || r['Dépl. (F)'] || r['Déplacement (F)'] || r['Dépl.'] || 0),
+                    commentaire:  r['Commentaire'] || r['Obs.'] || '',
+                    date:         r['Date'] || todayStr()
+                }));
+
+                extractedRows = [...extractedRows, ...newRows];
+                renderExtractionTable();
+                showToast(`Import CSV réussi : ${newRows.length} fiche(s) ajoutée(s) ✅`);
+            } catch (err) {
+                console.error(err);
+                showToast('Erreur lors de l\'import CSV : ' + err.message, 'error');
+            }
+        };
+        reader.readAsText(file, 'utf-8');
+    }
+
+    /** Exporte les données d'extraction actuelles en fichier JSON */
+    function exportExtractionJSON() {
+        if (!extractedRows || extractedRows.length === 0) {
+            showToast('Aucune donnée à exporter', 'info');
+            return;
+        }
+        const dataStr = JSON.stringify(extractedRows, null, 2);
+        const blob    = new Blob([dataStr], { type: 'application/json' });
+        const url     = URL.createObjectURL(blob);
+        const link    = document.createElement('a');
+        link.href     = url;
+        link.download = `base_extraction_${todayStr()}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+        showToast('Base de données exportée en JSON ✅');
+    }
+
     function exportPerformancePDF() {
         const start = $('#perf-start-date').value;
         const end = $('#perf-end-date').value;
@@ -1681,10 +2133,10 @@
         const done = all.filter(c => c.statut === 'effectue');
         const lossClients = all.filter(c => c.statut !== 'effectue' && c.statut !== 'annule');
 
-        const totalExpected = all.reduce((s, c) => s + (Number(c.montantTTC) || 0), 0);
-        const totalRealised = done.reduce((s, c) => s + (Number(c.montantTTC) || 0), 0);
+        const totalExpected = all.reduce((s, c) => s + (Number(c.montantBase) || 0), 0) + all.reduce((s, c) => s + (Number(c.fraisAnnexes) || 0), 0) + all.reduce((s, c) => s + (Number(c.deplacement) || 0), 0);
+        const totalRealised = done.reduce((s, c) => s + (Number(c.montantBase) || 0), 0) + done.reduce((s, c) => s + (Number(c.fraisAnnexes) || 0), 0) + done.reduce((s, c) => s + (Number(c.deplacement) || 0), 0);
         const rate = totalExpected > 0 ? Math.round((totalRealised / totalExpected) * 100) : 0;
-        const lossAmount = lossClients.reduce((s, c) => s + (Number(c.montantTTC) || 0), 0);
+        const lossAmount = lossClients.reduce((s, c) => s + (Number(c.montantBase) || 0), 0);
         const score = Math.round((rate / 100) * 20);
 
         const counts = {
@@ -1728,9 +2180,9 @@
         y += 6;
         doc.text(`- Interventions Effectuées : ${done.length}`, 20, y);
         y += 6;
-        doc.text(`- Chiffre d'Affaires Théorique : ${formatMoney(totalExpected)} FCFA`, 20, y);
+        doc.text(`- Chiffre d'Affaires Theorique : ${formatMoneyPDF(totalExpected)} FCFA`, 20, y);
         y += 6;
-        doc.text(`- Chiffre d'Affaires Réalisé : ${formatMoney(totalRealised)} FCFA`, 20, y);
+        doc.text(`- Chiffre d'Affaires Realise : ${formatMoneyPDF(totalRealised)} FCFA`, 20, y);
         y += 6;
         doc.text(`- Taux de réalisation : ${rate}%`, 20, y);
         y += 8;
@@ -1778,7 +2230,7 @@
         doc.setTextColor(220, 38, 38); // Red text for loss
         doc.text(`- Fiches non traitées : ${lossClients.length}`, 20, y);
         y += 6;
-        doc.text(`- Montant potentiel perdu : ${formatMoney(lossAmount)} FCFA`, 20, y);
+        doc.text(`- Montant potentiel perdu : ${formatMoneyPDF(lossAmount)} FCFA`, 20, y);
 
         // Footer
         doc.setFontSize(9);
@@ -1870,15 +2322,16 @@
             id: generateId(),
             date: '',
             codeClient: '',
+            codeAgent: '',
+            codeMarketeur: '',
             nomClient: '',
-            contact: '',
-            localisation: '',
-            service: '',
-            facture: 0,
+            telephone: '',
+            intervention: '',
+            montantBase: 0,
+            commission: 0,
             fraisAnnexes: 0,
-            factureTTC: 0,
             deplacement: 0,
-            marketeur: '',
+            commentaire: '',
             codeS: ''
         };
 
@@ -1890,29 +2343,27 @@
             val = extractField(line, ['code client', 'id client', 'code_client']);
             if (val !== null) { row.codeClient = stripDecorations(val).replace(/:/g, '').trim(); return; }
 
+            val = extractField(line, ['code agent', 'agent']);
+            if (val !== null && !line.toLowerCase().includes('marketeur')) { row.codeAgent = stripDecorations(val).replace(/:/g, '').trim(); return; }
+
+            val = extractField(line, ['code marketeur', 'marketeur', 'mk']);
+            if (val !== null) { row.codeMarketeur = stripDecorations(val).replace(/:/g, '').trim(); return; }
+
             val = extractField(line, ['nom client', 'nom_client', 'client']);
             if (val !== null && !line.toLowerCase().includes('code')) { row.nomClient = stripDecorations(val); return; }
 
             val = extractField(line, ['contact', 'tél', 'tel', 'téléphone', 'telephone']);
-            if (val !== null) { row.contact = stripDecorations(val); return; }
-
-            val = extractField(line, ['localisation', 'adresse', 'lieu', 'ville', 'location']);
-            if (val !== null) { row.localisation = stripDecorations(val); return; }
+            if (val !== null) { row.telephone = stripDecorations(val); return; }
 
             val = extractField(line, ['date']);
             if (val !== null) {
-                // Make sure it's not "code s" which also might have letters
                 const cleaned = stripDecorations(val).split(/\s/)[0];
                 const d = normalizeDateXT(cleaned);
                 if (d) { row.date = d; return; }
             }
 
             val = extractField(line, ['service', 'intervention', 'prestation', 'prest']);
-            if (val !== null) { row.service = stripDecorations(val); return; }
-
-            // Financial fields — order matters: TTC must be checked before plain "facture"
-            val = extractField(line, ['facture ttc', 'ttc']);
-            if (val !== null) { row.factureTTC = parseMoney(val); return; }
+            if (val !== null) { row.intervention = stripDecorations(val); return; }
 
             val = extractField(line, ['frais de déplacement', 'frais deplacement', 'déplacement', 'deplacement', 'transport']);
             if (val !== null) { row.deplacement = parseMoney(val); return; }
@@ -1920,13 +2371,16 @@
             val = extractField(line, ['frais annexes', 'annexes', 'frais ann']);
             if (val !== null) { row.fraisAnnexes = parseMoney(val); return; }
 
-            val = extractField(line, ['facture']);
-            if (val !== null && !line.toLowerCase().includes('ttc') && !line.toLowerCase().includes('annexes')) {
-                row.facture = parseMoney(val); return;
+            val = extractField(line, ['commission', 'com']);
+            if (val !== null) { row.commission = parseMoney(val); return; }
+
+            val = extractField(line, ['facture', 'prix']);
+            if (val !== null && !line.toLowerCase().includes('annexes')) {
+                row.montantBase = parseMoney(val); return;
             }
 
-            val = extractField(line, ['marketeur', 'marketer', 'agent']);
-            if (val !== null) { row.marketeur = stripDecorations(val); return; }
+            val = extractField(line, ['commentaire', 'obs', 'observation', 'remarque']);
+            if (val !== null) { row.commentaire = stripDecorations(val); return; }
 
             val = extractField(line, ['code s', 'codes', 'code_s']);
             if (val !== null) { row.codeS = stripDecorations(val); return; }
@@ -1973,10 +2427,7 @@
         return rawFiches.filter(f => f.trim()).map(parseClientFiche);
     }
 
-    // ─── Filter dropdowns population ───
-    function populateExtractionFilters() {
-        // Obsolete (localisation/marketeur dropdowns removed)
-    }
+
 
     // ─── Apply filters and get visible rows ───
     function getFilteredExtractionRows() {
@@ -1987,7 +2438,7 @@
         return extractedRows.filter(r => {
             // Text search
             if (query) {
-                const haystack = [r.codeClient, r.nomClient, r.localisation, r.service, r.marketeur, r.codeS, r.contact]
+                const haystack = [r.codeClient, r.codeAgent, r.codeMarketeur, r.nomClient, r.telephone, r.intervention, r.commentaire, r.codeS]
                     .join(' ').toLowerCase();
                 if (!haystack.includes(query)) return false;
             }
@@ -2008,10 +2459,10 @@
         const filtered = getFilteredExtractionRows();
 
         // Update totals
-        const totFact = filtered.reduce((s, r) => s + r.facture, 0);
+        const totFact = filtered.reduce((s, r) => s + r.montantBase, 0);
         const totAnn = filtered.reduce((s, r) => s + r.fraisAnnexes, 0);
         const totDepl = filtered.reduce((s, r) => s + r.deplacement, 0);
-        const totTTC = filtered.reduce((s, r) => s + r.factureTTC, 0);
+        const totTTC = filtered.reduce((s, r) => s + calcTTC(r), 0);
 
         const setEl = (id, val) => { const el = $(id); if (el) el.textContent = formatMoney(val); };
         setEl('#xt-total-facture', totFact);
@@ -2031,21 +2482,22 @@
         if (emptyState) emptyState.style.display = 'none';
 
         tbody.innerHTML = filtered.map(r => `
-            <tr data-xt-id="${r.id}" style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
-                <td style="padding: 16px 12px;"><span style="font-family: 'Inter', sans-serif; font-weight: 600; font-size: 0.82rem; background: rgba(255,255,255,0.06); padding: 4px 8px; border-radius: 4px; color: #e2e8f0;">${r.codeClient || '—'}</span></td>
-                <td style="padding: 16px 12px; font-weight: 600; color: #f8fafc; font-size: 0.9rem;">${r.nomClient || '—'}</td>
-                <td style="padding: 16px 12px; color: #cbd5e1; font-size: 0.88rem;">${r.contact || '—'}</td>
-                <td style="padding: 16px 12px; color: #cbd5e1; font-size: 0.88rem;">${r.localisation || '—'}</td>
-                <td style="padding: 16px 12px; color: #cbd5e1; font-size: 0.88rem; max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${r.service || ''}">${r.service || '—'}</td>
-                <td style="padding: 16px 12px; font-weight: 600; color: #e2e8f0; font-size: 0.9rem;">${r.facture > 0 ? formatMoney(r.facture) : '0'}</td>
-                <td style="padding: 16px 12px; color: #cbd5e1; font-size: 0.9rem;">${r.fraisAnnexes > 0 ? formatMoney(r.fraisAnnexes) : '0'}</td>
-                <td style="padding: 16px 12px; color: #cbd5e1; font-size: 0.9rem;">${r.deplacement > 0 ? formatMoney(r.deplacement) : '0'}</td>
-                <td style="padding: 16px 12px; font-weight: 700; color: #00e676; font-size: 0.9rem;">${r.factureTTC > 0 ? formatMoney(r.factureTTC) : '0'}</td>
-                <td style="padding: 16px 12px; color: #cbd5e1; font-size: 0.88rem;">${r.marketeur || '—'}</td>
-                <td style="padding: 16px 12px; color: #cbd5e1; font-size: 0.85rem;">${r.codeS || '—'}</td>
-                <td style="padding: 16px 12px; text-align: center;">
-                    <button onclick="window.xtDeleteRow('${r.id}')" style="background: none; border: none; cursor: pointer; color: rgba(248,113,113,0.6); padding: 4px; transition: color 0.2s;" onmouseover="this.style.color='#f87171'" onmouseout="this.style.color='rgba(248,113,113,0.6)'" title="Supprimer">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+            <tr data-xt-id="${escapeHTML(r.id)}" class="xt-row">
+                <td class="xt-cell-date">${escapeHTML(r.date || todayStr())}</td>
+                <td class="xt-cell"><span class="code-pill">${escapeHTML(r.codeClient || '—')}</span></td>
+                <td class="xt-cell"><span class="code-pill">${escapeHTML(r.codeAgent || '—')}</span></td>
+                <td class="xt-cell-muted">${escapeHTML(r.codeMarketeur || '—')}</td>
+                <td class="xt-cell-bold">${escapeHTML(r.nomClient || '—')}</td>
+                <td class="xt-cell-muted">${escapeHTML(r.telephone || '—')}</td>
+                <td class="xt-cell-truncate" title="${escapeHTML(r.intervention || '')}">${escapeHTML(r.intervention || '—')}</td>
+                <td class="xt-cell-money">${r.montantBase > 0 ? formatMoney(r.montantBase) : '0'}</td>
+                <td class="xt-cell-money-warn">${r.commission > 0 ? formatMoney(r.commission) : '0'}</td>
+                <td class="xt-cell-money-muted">${r.fraisAnnexes > 0 ? formatMoney(r.fraisAnnexes) : '0'}</td>
+                <td class="xt-cell-money-muted">${r.deplacement > 0 ? formatMoney(r.deplacement) : '0'}</td>
+                <td class="xt-cell-truncate" style="max-width: 150px;" title="${escapeHTML(r.commentaire || '')}">${escapeHTML(r.commentaire || '—')}</td>
+                <td class="xt-cell-center">
+                    <button class="xt-btn-delete" onclick="window.xtDeleteRow('${escapeHTML(r.id)}')" title="Supprimer">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
                     </button>
                 </td>
             </tr>
@@ -2064,14 +2516,22 @@
         const rows = getFilteredExtractionRows();
         if (rows.length === 0) { showToast('Aucune donnée à exporter', 'info'); return; }
 
-        const headers = ['Date', 'Code Client', 'Nom Client', 'Contact', 'Localisation', 'Service', 'Facture', 'Frais Annexes', 'Déplacement', 'Facture TTC', 'Marketeur', 'CODE S'];
+        const headers = ['Date', 'Code Client', 'Code Agent', 'Code Marketeur', 'Nom Client', 'Contact Client', 'Prestation', 'Facture', 'Commission', 'Frais Annexes', 'Déplacement', 'Commentaire', 'CODE S'];
         let csv = '\uFEFF' + headers.join(';') + '\n';
         rows.forEach(r => {
-            const row = [r.date, r.codeClient, r.nomClient, r.contact, r.localisation, r.service,
-                r.facture, r.fraisAnnexes, r.deplacement, r.factureTTC, r.marketeur, r.codeS]
+            const row = [r.date, r.codeClient, r.codeAgent, r.codeMarketeur, r.nomClient, r.telephone, r.intervention,
+                r.montantBase, r.commission, r.fraisAnnexes, r.deplacement, r.commentaire, r.codeS]
                 .map(v => `"${(v ?? '').toString().replace(/"/g, '""')}"`).join(';');
             csv += row + '\n';
         });
+        
+        // Add totals row
+        const totFact = rows.reduce((s, r) => s + (Number(r.montantBase) || 0), 0);
+        const totCom = rows.reduce((s, r) => s + (Number(r.commission) || 0), 0);
+        const totAnn = rows.reduce((s, r) => s + (Number(r.fraisAnnexes) || 0), 0);
+        const totDepl = rows.reduce((s, r) => s + (Number(r.deplacement) || 0), 0);
+        const totalsRow = ['"TOTAUX"', '""', '""', '""', '""', '""', '""', `"${totFact}"`, `"${totCom}"`, `"${totAnn}"`, `"${totDepl}"`, '""', '""'].join(';');
+        csv += totalsRow + '\n';
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -2087,26 +2547,27 @@
         const data = rows.map(r => ({
             'Date': r.date,
             'Code Client': r.codeClient,
+            'Code Agent': r.codeAgent,
+            'Code Marketeur': r.codeMarketeur,
             'Nom Client': r.nomClient,
-            'Contact': r.contact,
-            'Localisation': r.localisation,
-            'Service': r.service,
-            'Facture': r.facture,
+            'Contact Client': r.telephone,
+            'Prestation': r.intervention,
+            'Facture': r.montantBase,
+            'Commission': r.commission,
             'Frais Annexes': r.fraisAnnexes,
             'Frais Déplacement': r.deplacement,
-            'Facture TTC': r.factureTTC,
-            'Marketeur': r.marketeur,
+            'Commentaire': r.commentaire,
             'CODE S': r.codeS
         }));
 
         // Add totals row
         const totals = {
-            'Date': 'TOTAL', 'Code Client': '', 'Nom Client': '', 'Contact': '', 'Localisation': '', 'Service': '',
-            'Facture': rows.reduce((s, r) => s + r.facture, 0),
-            'Frais Annexes': rows.reduce((s, r) => s + r.fraisAnnexes, 0),
-            'Frais Déplacement': rows.reduce((s, r) => s + r.deplacement, 0),
-            'Facture TTC': rows.reduce((s, r) => s + r.factureTTC, 0),
-            'Marketeur': '', 'CODE S': ''
+            'Date': 'TOTAL', 'Code Client': '', 'Code Agent': '', 'Code Marketeur': '', 'Nom Client': '', 'Contact Client': '', 'Prestation': '',
+            'Facture': rows.reduce((s, r) => s + (Number(r.montantBase) || 0), 0),
+            'Commission': rows.reduce((s, r) => s + (Number(r.commission) || 0), 0),
+            'Frais Annexes': rows.reduce((s, r) => s + (Number(r.fraisAnnexes) || 0), 0),
+            'Frais Déplacement': rows.reduce((s, r) => s + (Number(r.deplacement) || 0), 0),
+            'Commentaire': '', 'CODE S': ''
         };
         data.push(totals);
 
@@ -2133,24 +2594,24 @@
         doc.text(`Généré le ${new Date().toLocaleString('fr-FR')} — ${rows.length} fiche(s)`, 14, 23);
 
         // Totals
-        const totFact = rows.reduce((s, r) => s + r.facture, 0);
-        const totAnn = rows.reduce((s, r) => s + r.fraisAnnexes, 0);
-        const totDepl = rows.reduce((s, r) => s + r.deplacement, 0);
-        const totTTC = rows.reduce((s, r) => s + r.factureTTC, 0);
+        const totFact = rows.reduce((s, r) => s + (Number(r.montantBase) || 0), 0);
+        const totAnn = rows.reduce((s, r) => s + (Number(r.fraisAnnexes) || 0), 0);
+        const totDepl = rows.reduce((s, r) => s + (Number(r.deplacement) || 0), 0);
+        const totTTC = rows.reduce((s, r) => s + calcTTC(r), 0);
 
         doc.setFontSize(8);
         doc.setTextColor(40, 40, 40);
-        doc.text(`Total Facture: ${formatMoney(totFact)} FCFA   |   Total Frais Annexes: ${formatMoney(totAnn)} FCFA   |   Total Déplacement: ${formatMoney(totDepl)} FCFA   |   Total TTC: ${formatMoney(totTTC)} FCFA`, 14, 30);
+        doc.text(`Total Facture: ${formatMoneyPDF(totFact)} FCFA   |   Total Frais Annexes: ${formatMoneyPDF(totAnn)} FCFA   |   Total Deplacement: ${formatMoneyPDF(totDepl)} FCFA   |   Total TTC: ${formatMoneyPDF(totTTC)} FCFA`, 14, 30);
 
-        const headers = ['Date', 'Code', 'Nom Client', 'Contact', 'Localisation', 'Service', 'Facture', 'F. Ann.', 'Dépl.', 'TTC', 'Marketeur', 'CODE S'];
+        const headers = ['Date', 'Code', 'Nom Client', 'Contact', 'Prestation', 'Facture', 'Com.', 'F. Ann.', 'Depl.', 'Obs.', 'CODE S'];
         const body = rows.map(r => [
-            r.date || '', r.codeClient || '', r.nomClient || '', r.contact || '',
-            r.localisation || '', r.service || '',
-            r.facture ? formatMoney(r.facture) : '—',
-            r.fraisAnnexes ? formatMoney(r.fraisAnnexes) : '—',
-            r.deplacement ? formatMoney(r.deplacement) : '—',
-            r.factureTTC ? formatMoney(r.factureTTC) : '—',
-            r.marketeur || '', r.codeS || ''
+            r.date || '', r.codeClient || '', r.nomClient || '', r.telephone || '',
+            r.intervention || '',
+            r.montantBase ? formatMoneyPDF(r.montantBase) : '0',
+            r.commission ? formatMoneyPDF(r.commission) : '0',
+            r.fraisAnnexes ? formatMoneyPDF(r.fraisAnnexes) : '0',
+            r.deplacement ? formatMoneyPDF(r.deplacement) : '0',
+            r.commentaire || '', r.codeS || ''
         ]);
 
         doc.autoTable({
@@ -2187,15 +2648,12 @@
 
     // ─── Init extraction event listeners ───
     function initExtractionModule() {
-        const modal = $('#xt-duplicate-modal');
-        const btnForce = $('#xt-dup-force');
-        const btnCancel = $('#xt-dup-cancel');
+        const modal = $('#global-duplicate-modal');
+        const btnForce = $('#global-dup-force');
+        const btnCancel = $('#global-dup-cancel');
         const pasteArea = $('#xt-paste-area');
         const statusEl = $('#xt-parse-status');
 
-        function closeDupModal() { modal?.classList.add('hidden'); }
-
-        // Function to actually add rows to the table
         function addExtractedRows(rows, countValid) {
             extractedRows = [...extractedRows, ...rows];
             renderExtractionTable();
@@ -2204,7 +2662,6 @@
             showToast(`${countValid} fiche(s) ajoutée(s) avec succès ✅`, 'success');
         }
 
-        // Lancer l'extraction
         const btnParse = $('#btn-xt-parse');
         if (btnParse) {
             btnParse.addEventListener('click', () => {
@@ -2219,8 +2676,6 @@
                     return;
                 }
 
-                // --- DUPLICATE DETECTION ---
-                // We consider a duplicate if Code Client AND Nom AND Contact match exactly
                 const duplicates = valid.filter(newR => {
                     return extractedRows.some(oldR => 
                         (newR.codeClient && oldR.codeClient && newR.codeClient.toLowerCase() === oldR.codeClient.toLowerCase()) ||
@@ -2230,30 +2685,35 @@
 
                 if (duplicates.length > 0) {
                     pendingExtractions = valid;
-                    if (modal) {
-                        const msg = $('#xt-duplicate-msg');
-                        if (msg) msg.textContent = `${duplicates.length} fiche(s) semble(nt) déjà exister (Code Client ou Contact identique). Voulez-vous quand même les ajouter ?`;
+                    if (modal && btnForce && btnCancel) {
+                        const msg = $('#global-duplicate-msg');
+                        if (msg) msg.textContent = `${duplicates.length} fiche(s) semble(nt) déjà exister dans l'extraction. Voulez-vous quand même les ajouter ?`;
                         modal.classList.remove('hidden');
+
+                        const handleForce = () => {
+                            cleanup();
+                            addExtractedRows(pendingExtractions, pendingExtractions.length);
+                            pendingExtractions = [];
+                        };
+
+                        const handleCancel = () => {
+                            cleanup();
+                            pendingExtractions = [];
+                            showToast('Ajout annulé', 'info');
+                        };
+
+                        const cleanup = () => {
+                            modal.classList.add('hidden');
+                            btnForce.removeEventListener('click', handleForce);
+                            btnCancel.removeEventListener('click', handleCancel);
+                        };
+
+                        btnForce.addEventListener('click', handleForce);
+                        btnCancel.addEventListener('click', handleCancel);
                     }
                 } else {
                     addExtractedRows(valid, valid.length);
                 }
-            });
-        }
-
-        // Modal actions
-        if (btnForce) {
-            btnForce.addEventListener('click', () => {
-                addExtractedRows(pendingExtractions, pendingExtractions.length);
-                pendingExtractions = [];
-                closeDupModal();
-            });
-        }
-        if (btnCancel) {
-            btnCancel.addEventListener('click', () => {
-                pendingExtractions = [];
-                closeDupModal();
-                showToast('Ajout annulé', 'info');
             });
         }
 
@@ -2268,6 +2728,62 @@
                 showToast('Tableau vidé', 'info');
             });
         }
+
+        // Vider le champ de texte
+        const btnClearText = $('#btn-xt-clear-text');
+        if (btnClearText && pasteArea) {
+            btnClearText.addEventListener('click', () => {
+                pasteArea.value = '';
+                if (statusEl) statusEl.textContent = '';
+                pasteArea.focus();
+                showToast('Zone de texte vidée', 'info');
+            });
+        }
+
+        // ─── Export JSON (Outil d'Extraction) ───
+        const btnXtExportJson = $('#btn-xt-export-json');
+        if (btnXtExportJson) {
+            btnXtExportJson.addEventListener('click', () => {
+                const menu = $('#xt-export-menu');
+                if (menu) menu.classList.add('hidden');
+                exportExtractionJSON();
+            });
+        }
+
+        // ─── Import dropdown (Outil d'Extraction) ───
+        const btnImportToggle = $('#btn-xt-import-toggle');
+        const xtImportMenu    = $('#xt-import-menu');
+
+        if (btnImportToggle && xtImportMenu) {
+            btnImportToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                xtImportMenu.classList.toggle('hidden');
+                const xtExportMenu = $('#xt-export-menu');
+                if (xtExportMenu) xtExportMenu.classList.add('hidden');
+            });
+        }
+
+        // Helper : brancher bouton → input file → callback
+        function bindImportBtn(btnId, inputId, handler) {
+            const btn   = $(`#${btnId}`);
+            const input = $(`#${inputId}`);
+            if (!btn || !input) return;
+            btn.addEventListener('click', () => {
+                if (xtImportMenu) xtImportMenu.classList.add('hidden');
+                input.click();
+            });
+            input.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) { handler(file); e.target.value = ''; }
+            });
+        }
+
+        bindImportBtn('btn-xt-import-json',  'xt-import-json-input',  importExtractionFromJSON);
+        bindImportBtn('btn-xt-import-excel', 'xt-import-excel-input', importExtractionFromExcel);
+        bindImportBtn('btn-xt-import-csv',   'xt-import-csv-input',   importExtractionFromCSV);
+        bindImportBtn('btn-xt-import-pdf',   'xt-import-pdf-input',   (file) => {
+            showToast('Import PDF non pris en charge nativement — utilisez JSON, Excel ou CSV.', 'info');
+        });
 
         // Filter events
         ['xt-search', 'xt-filter-start', 'xt-filter-end'].forEach(id => {
@@ -2290,24 +2806,44 @@
         // Export Dropdown Toggle
         const btnExportMain = $('#btn-xt-export-main');
         const exportMenu = $('#xt-export-menu');
+        const importMenu = $('#xt-import-menu');
+
+        // Ferme tous les dropdowns de l'Outil d'Extraction
+        function closeXtMenus() {
+            if (exportMenu) exportMenu.classList.add('hidden');
+            if (importMenu) importMenu.classList.add('hidden');
+        }
+
         if (btnExportMain && exportMenu) {
             btnExportMain.addEventListener('click', (e) => {
                 e.stopPropagation();
-                exportMenu.classList.toggle('hidden');
+                const wasHidden = exportMenu.classList.contains('hidden');
+                closeXtMenus();
+                if (wasHidden) exportMenu.classList.remove('hidden');
             });
-            
-            // Close dropdown when clicking outside
-            document.addEventListener('click', (e) => {
-                if (!btnExportMain.contains(e.target) && !exportMenu.contains(e.target)) {
-                    exportMenu.classList.add('hidden');
-                }
-            });
-            
-            // Close dropdown when an option is clicked
             exportMenu.querySelectorAll('.export-option').forEach(opt => {
-                opt.addEventListener('click', () => exportMenu.classList.add('hidden'));
+                opt.addEventListener('click', () => closeXtMenus());
             });
         }
+
+        // Fermeture du menu Import au clic sur option (le toggle est déjà géré plus haut)
+        if (importMenu) {
+            importMenu.querySelectorAll('.export-option').forEach(opt => {
+                opt.addEventListener('click', () => closeXtMenus());
+            });
+        }
+
+        // Fermeture globale au clic en dehors des deux menus
+        document.addEventListener('click', (e) => {
+            const xtExportWrapper = $('#xt-export-wrapper');
+            const xtImportWrapper = $('#xt-import-wrapper');
+            const insideExport = xtExportWrapper && xtExportWrapper.contains(e.target);
+            const insideImport = xtImportWrapper && xtImportWrapper.contains(e.target);
+            if (!insideExport && !insideImport) {
+                closeXtMenus();
+            }
+        });
+
 
         // Focus styling for textarea
         if (pasteArea) {
@@ -2319,7 +2855,9 @@
         renderExtractionTable();
     }
 
-    document.addEventListener('DOMContentLoaded', init);
-    document.addEventListener('DOMContentLoaded', initExtractionModule);
+    document.addEventListener('DOMContentLoaded', () => {
+        init();
+        initExtractionModule();
+    });
 })();
 

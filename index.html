@@ -59,19 +59,7 @@
                         <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
                         <path d="M16 3.13a4 4 0 0 1 0 7.75" />
                     </svg>
-                    <span>Liste des clients</span>
-                </button>
-            </li>
-            <li>
-                <button class="nav-btn" data-screen="add-client" id="nav-add-client">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                        stroke-linejoin="round">
-                        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                        <circle cx="8.5" cy="7" r="4" />
-                        <line x1="20" y1="8" x2="20" y2="14" />
-                        <line x1="23" y1="11" x2="17" y2="11" />
-                    </svg>
-                    <span>Ajouter un client</span>
+                    <span>Gestion de la Clientèle</span>
                 </button>
             </li>
             <li>
@@ -122,18 +110,6 @@
             </div>
         </div>
 
-        <div class="sidebar-footer">
-            <div class="objective-mini">
-                <span class="obj-label">Objectif du jour</span>
-                <div class="obj-row">
-                    <span id="sidebar-progress-text">0 / 10</span>
-                    <span id="sidebar-progress-pct">0%</span>
-                </div>
-                <div class="progress-bar-mini">
-                    <div class="progress-fill-mini" id="sidebar-progress-bar" style="width:0%"></div>
-                </div>
-            </div>
-        </div>
     </nav>
 
     <!-- ===== MOBILE HEADER ===== -->
@@ -162,21 +138,18 @@
                 <p class="screen-subtitle">Aperçu de vos statistiques sur la période sélectionnée.</p>
             </div>
 
-            <div class="filters-bar"
-                style="display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; background: var(--glass-bg); padding: 16px; border-radius: 12px; border: 1px solid var(--glass-border);">
-                <div style="display: flex; flex-direction: column; gap: 4px;">
-                    <label for="dash-start-date" style="font-size: 0.85rem; color: var(--text-muted);">Du</label>
-                    <input type="date" id="dash-start-date"
-                        style="padding: 8px; border-radius: 8px; border: 1px solid var(--glass-border); background: var(--bg-card); color: var(--text-primary);">
+            <div class="filters-bar filters-bar-card">
+                <div class="date-field-group">
+                    <label for="dash-start-date" class="date-field-label">Du</label>
+                    <input type="date" id="dash-start-date" class="dash-date-input filter-date-input">
                 </div>
-                <div style="display: flex; flex-direction: column; gap: 4px;">
-                    <label for="dash-end-date" style="font-size: 0.85rem; color: var(--text-muted);">Au</label>
-                    <input type="date" id="dash-end-date"
-                        style="padding: 8px; border-radius: 8px; border: 1px solid var(--glass-border); background: var(--bg-card); color: var(--text-primary);">
+                <div class="date-field-group">
+                    <label for="dash-end-date" class="date-field-label">Au</label>
+                    <input type="date" id="dash-end-date" class="dash-date-input filter-date-input">
                 </div>
-                <div style="display: flex; align-items: flex-end; gap: 8px;">
-                    <button id="btn-dash-filter" class="btn btn-primary" style="height: 40px;">Appliquer</button>
-                    <button id="btn-dash-today" class="btn btn-secondary" style="height: 40px;">Aujourd'hui</button>
+                <div class="filter-actions">
+                    <button id="btn-dash-filter" class="btn btn-primary btn-compact">Appliquer</button>
+                    <button id="btn-dash-today" class="btn btn-secondary btn-compact">Aujourd'hui</button>
                 </div>
             </div>
 
@@ -191,7 +164,7 @@
                     </div>
                     <div class="kpi-body">
                         <span class="kpi-value" id="kpi-total-clients">0</span>
-                        <span class="kpi-label">Clients du jour</span>
+                        <span class="kpi-label">Clients</span>
                     </div>
                 </div>
                 <div class="kpi-card kpi-done">
@@ -227,7 +200,7 @@
                     </div>
                     <div class="kpi-body">
                         <span class="kpi-value" id="kpi-ca">0</span>
-                        <span class="kpi-label">Chiffre d'affaires du jour</span>
+                        <span class="kpi-label">Chiffre d'affaires</span>
                     </div>
                 </div>
             </div>
@@ -274,11 +247,7 @@
             <!-- Objective section -->
             <div class="objective-section">
                 <div class="objective-header">
-                    <h2>Objectif journalier</h2>
-                    <div class="objective-edit" style="display: none;">
-                        <label for="objective-input">Objectif :</label>
-                        <input type="number" id="objective-input" value="0" min="1" max="100000000">
-                    </div>
+                    <h2>Objectif</h2>
                 </div>
                 <div class="progress-container">
                     <div class="progress-bar">
@@ -330,127 +299,228 @@
         <!-- ====== SCREEN 2 : CLIENT LIST ====== -->
         <section id="screen-clients" class="screen">
             <div class="screen-header"
-                style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
-                <div>
-                    <h1>Liste des clients</h1>
-                    <p class="screen-subtitle">Consultez et gérez l'ensemble de vos fiches clients.</p>
-                </div>
-                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                    <div style="display: flex; align-items: center; gap: 8px; background: var(--glass); padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--glass-border);">
-                        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">Période :</span>
-                        <input type="date" id="clients-start-date" class="header-date-input" style="font-size: 0.9rem; border-bottom: none;">
-                        <span style="color: var(--text-muted);">au</span>
-                        <input type="date" id="clients-end-date" class="header-date-input" style="font-size: 0.9rem; border-bottom: none;">
+                style="display: flex; flex-direction: column; gap: 24px;">
+                <!-- Section Haut : Titre + Période -->
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
+                    <div>
+                        <h1>Gestion de la Clientèle</h1>
+                        <p class="screen-subtitle">Consultez, gérez et ajoutez vos fiches clients depuis cet espace unifié.</p>
                     </div>
-                    <button class="btn btn-primary" id="btn-clients-filter-apply">Appliquer</button>
-                    <button class="btn btn-ghost" id="btn-reset-period">🔄</button>
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <div style="display: flex; align-items: center; gap: 8px; background: var(--glass); padding: 8px 16px; border-radius: var(--radius-sm); border: 1px solid var(--glass-border); box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                            <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">Période :</span>
+                            <input type="date" id="clients-start-date" class="header-date-input" style="font-size: 0.9rem; border-bottom: none;">
+                            <span style="color: var(--text-muted); font-weight: 500;">au</span>
+                            <input type="date" id="clients-end-date" class="header-date-input" style="font-size: 0.9rem; border-bottom: none;">
+                        </div>
+                        <button class="btn btn-primary btn-filter-apply" id="btn-clients-filter-apply" style="padding: 8px 24px;">Appliquer</button>
+                        <button class="btn btn-ghost" id="btn-reset-period" title="Réinitialiser la période" style="padding: 8px; border: 1px solid var(--glass-border); background: var(--glass);">🔄</button>
+                    </div>
                 </div>
-                <div class="screen-actions">
-                    <div class="search-box">
+                
+                <!-- Section Bas : Actions (Recherche, Ajout, Export/Import) -->
+                <div class="screen-actions" style="margin-top: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; background: var(--glass-bg, var(--bg-card)); padding: 16px; border-radius: 12px; border: 1px solid var(--glass-border); box-shadow: 0 4px 24px rgba(0,0,0,0.1); width: 100%;">
+                    <div class="search-box" style="margin: 0; min-width: 300px; max-width: 400px; background: rgba(0,0,0,0.15);">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <circle cx="11" cy="11" r="8" />
                             <line x1="21" y1="21" x2="16.65" y2="16.65" />
                         </svg>
-                        <input type="text" id="search-input" placeholder="Rechercher un client…">
+                        <input type="text" id="search-input" placeholder="Rechercher un client (nom, code, téléphone)…" style="width: 100%; background: transparent; border: none; color: var(--text-primary); outline: none;">
                     </div>
-                    <button class="btn btn-ghost" id="btn-reset-data" style="color: var(--danger);">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                            style="width:16px;height:16px;">
-                            <polyline points="1 4 1 10 7 10" />
-                            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-                        </svg>
-                        Réinitialiser
-                    </button>
-                    <button class="btn btn-ghost" id="btn-import-data" style="color: var(--info);">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                            style="width:16px;height:16px;">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                            <polyline points="17 8 12 3 7 8" />
-                            <line x1="12" y1="3" x2="12" y2="15" />
-                        </svg>
-                        Restaurer
-                    </button>
-                    <button class="btn btn-primary" id="btn-goto-add">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="12" y1="5" x2="12" y2="19" />
-                            <line x1="5" y1="12" x2="19" y2="12" />
-                        </svg>
-                        Ajouter
-                    </button>
-                    <div class="export-dropdown" style="position: relative; display: inline-block;">
-                        <button class="btn btn-ghost" id="btn-export-toggle">
+
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <button class="btn btn-primary" id="btn-toggle-add-form" style="box-shadow: 0 4px 12px rgba(124,58,237,0.2);">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                <polyline points="7 10 12 15 17 10" />
-                                <line x1="12" y1="15" x2="12" y2="3" />
+                                <line x1="12" y1="5" x2="12" y2="19" />
+                                <line x1="5" y1="12" x2="19" y2="12" />
                             </svg>
-                            Exporter ▾
+                            Nouveau Client
                         </button>
-                        <div id="export-menu" class="export-menu hidden"
-                            style="position: absolute; top: 100%; right: 0; z-index: 999; min-width: 180px; margin-top: 4px; background: var(--bg-card); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); overflow: hidden;">
-                            <button class="export-option" id="btn-export-csv"
-                                style="display: flex; gap: 8px; align-items: center; width: 100%; padding: 10px 16px; border: none; background: none; color: var(--text); font-size: .85rem; cursor: pointer; text-align: left; white-space: nowrap;"
-                                onmouseover="this.style.background='rgba(255,255,255,.08)'"
-                                onmouseout="this.style.background='none'">
-                                📄 Export CSV
+                    <div style="display: flex; gap: 12px; align-items: center;">
+                        <div class="export-dropdown" style="position: relative; display: inline-block;">
+                            <button class="btn btn-ghost" id="btn-export-toggle">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <polyline points="7 10 12 15 17 10" />
+                                    <line x1="12" y1="15" x2="12" y2="3" />
+                                </svg>
+                                Exporter ▾
                             </button>
-                            <!-- NEW: Export JSON Backup -->
-                            <button class="export-option" id="btn-export-json"
-                                style="display: flex; gap: 8px; align-items: center; width: 100%; padding: 10px 16px; border: none; background: none; color: var(--text); font-size: .85rem; cursor: pointer; text-align: left; white-space: nowrap;"
-                                onmouseover="this.style.background='rgba(255,255,255,.08)'"
-                                onmouseout="this.style.background='none'">
-                                📥 Backup JSON
+                            <div id="export-menu" class="export-menu hidden"
+                                style="position: absolute; top: 100%; right: 0; z-index: 999; min-width: 180px; margin-top: 4px; background: var(--bg-card); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); overflow: hidden;">
+                                <button class="export-option" id="btn-export-excel"
+                                    class="dropdown-option"
+                                    onmouseover="this.style.background='rgba(255,255,255,.08)'"
+                                    onmouseout="this.style.background='none'">
+                                    📊 Export Excel
+                                </button>
+                                <button class="export-option" id="btn-export-csv"
+                                    class="dropdown-option"
+                                    onmouseover="this.style.background='rgba(255,255,255,.08)'"
+                                    onmouseout="this.style.background='none'">
+                                    📄 Export CSV
+                                </button>
+                                <button class="export-option" id="btn-export-pdf"
+                                    class="dropdown-option"
+                                    onmouseover="this.style.background='rgba(255,255,255,.08)'"
+                                    onmouseout="this.style.background='none'">
+                                    📕 Export PDF
+                                </button>
+                            <div class="menu-divider"></div>
+                                <button class="export-option" id="btn-export-json"
+                                    class="dropdown-option"
+                                    onmouseover="this.style.background='rgba(255,255,255,.08)'"
+                                    onmouseout="this.style.background='none'">
+                                    💾 Exporter la base de données
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Hidden input fields for import -->
+                        <input type="file" id="input-import-excel" accept=".xlsx,.xls" class="visually-hidden">
+                        <input type="file" id="input-import-csv" accept=".csv" class="visually-hidden">
+                        <input type="file" id="input-import-pdf" accept=".pdf" class="visually-hidden">
+                        <input type="file" id="input-import-json" accept=".json" class="visually-hidden">
+                        
+                        <div class="export-dropdown" style="position: relative; display: inline-block;">
+                            <button class="btn btn-ghost" id="btn-import-toggle" style="color: var(--info);">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <polyline points="17 8 12 3 7 8" />
+                                    <line x1="12" y1="3" x2="12" y2="15" />
+                                </svg>
+                                Importer ▾
                             </button>
-                            <button class="export-option" id="btn-export-excel"
-                                style="display: flex; gap: 8px; align-items: center; width: 100%; padding: 10px 16px; border: none; background: none; color: var(--text); font-size: .85rem; cursor: pointer; text-align: left; white-space: nowrap;"
-                                onmouseover="this.style.background='rgba(255,255,255,.08)'"
-                                onmouseout="this.style.background='none'">
-                                📊 Export Excel
-                            </button>
-                            <button class="export-option" id="btn-export-pdf"
-                                style="display: flex; gap: 8px; align-items: center; width: 100%; padding: 10px 16px; border: none; background: none; color: var(--text); font-size: .85rem; cursor: pointer; text-align: left; white-space: nowrap;"
-                                onmouseover="this.style.background='rgba(255,255,255,.08)'"
-                                onmouseout="this.style.background='none'">
-                                📕 Export PDF
-                            </button>
+                            <div id="import-menu" class="export-menu hidden"
+                                style="position: absolute; top: 100%; right: 0; z-index: 999; min-width: 240px; margin-top: 4px; background: var(--bg-card); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); overflow: hidden;">
+                                <button class="export-option" id="btn-import-excel"
+                                    class="dropdown-option"
+                                    onmouseover="this.style.background='rgba(255,255,255,.08)'"
+                                    onmouseout="this.style.background='none'">
+                                    📊 Importer Excel (.xlsx)
+                                </button>
+                                <button class="export-option" id="btn-import-csv"
+                                    class="dropdown-option"
+                                    onmouseover="this.style.background='rgba(255,255,255,.08)'"
+                                    onmouseout="this.style.background='none'">
+                                    📄 Importer CSV (.csv)
+                                </button>
+                                <button class="export-option" id="btn-import-pdf"
+                                    class="dropdown-option"
+                                    onmouseover="this.style.background='rgba(255,255,255,.08)'"
+                                    onmouseout="this.style.background='none'">
+                                    📕 Importer PDF (.pdf)
+                                </button>
+                                <div style="height: 1px; background: rgba(255,255,255,0.1); margin: 4px 0;"></div>
+                                <button class="export-option" id="btn-import-json-restore"
+                                    class="dropdown-option"
+                                    onmouseover="this.style.background='rgba(255,255,255,.08)'"
+                                    onmouseout="this.style.background='none'">
+                                    💾 Restaurer une sauvegarde (.json)
+                                </button>
+                            </div>
                         </div>
                     </div>
-                    <!-- Hidden input fields for import -->
-                    <input type="file" id="input-import-excel" accept=".xlsx,.xls" style="display: none;">
-                    <input type="file" id="input-import-csv" accept=".csv" style="display: none;">
-                    <input type="file" id="input-import-pdf" accept=".pdf" style="display: none;">
-                    <input type="file" id="input-import-json" accept=".json" style="display: none;">
-                    <div class="export-dropdown" style="position: relative; display: inline-block;">
-                        <button class="btn btn-ghost" id="btn-import-toggle" style="color: var(--info);">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                <polyline points="17 8 12 3 7 8" />
-                                <line x1="12" y1="3" x2="12" y2="15" />
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== UNIFIED ADD CLIENT MODULE (REPLIABLE) ====== -->
+            <div id="add-client-container" class="hidden" style="margin-bottom: 32px; background: var(--glass-bg); padding: 24px; border-radius: 16px; border: 1px solid var(--glass-border);">
+                <div style="margin-bottom: 20px;">
+                    <h2 style="font-size: 1.25rem; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="width: 18px; height: 18px; color: var(--primary);">
+                            <path d="M12 5v14M5 12h14"></path>
+                        </svg>
+                        Nouvelle fiche pour le <input type="date" id="add-screen-date" class="header-date-input" style="font-size: 1.1rem; border-bottom: 2px solid var(--primary);">
+                    </h2>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px;">
+                    <!-- WhatsApp Paste Zone -->
+                    <div class="paste-zone" id="paste-zone" style="margin-bottom: 0;">
+                        <div class="paste-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+                                <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
                             </svg>
-                            Importer ▾
-                        </button>
-                        <div id="import-menu" class="export-menu hidden"
-                            style="position: absolute; top: 100%; right: 0; z-index: 999; min-width: 200px; margin-top: 4px; background: var(--bg-card); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); overflow: hidden;">
-                            <button class="export-option" id="btn-import-excel"
-                                style="display: flex; gap: 8px; align-items: center; width: 100%; padding: 10px 16px; border: none; background: none; color: var(--text); font-size: .85rem; cursor: pointer; text-align: left; white-space: nowrap;"
-                                onmouseover="this.style.background='rgba(255,255,255,.08)'"
-                                onmouseout="this.style.background='none'">
-                                📊 Importer Excel (.xlsx)
-                            </button>
-                            <button class="export-option" id="btn-import-csv"
-                                style="display: flex; gap: 8px; align-items: center; width: 100%; padding: 10px 16px; border: none; background: none; color: var(--text); font-size: .85rem; cursor: pointer; text-align: left; white-space: nowrap;"
-                                onmouseover="this.style.background='rgba(255,255,255,.08)'"
-                                onmouseout="this.style.background='none'">
-                                📄 Importer CSV (.csv)
-                            </button>
-                            <button class="export-option" id="btn-import-pdf"
-                                style="display: flex; gap: 8px; align-items: center; width: 100%; padding: 10px 16px; border: none; background: none; color: var(--text); font-size: .85rem; cursor: pointer; text-align: left; white-space: nowrap;"
-                                onmouseover="this.style.background='rgba(255,255,255,.08)'"
-                                onmouseout="this.style.background='none'">
-                                📕 Importer PDF (.pdf)
-                            </button>
+                        </div>
+                        <p>Collez ici les informations WhatsApp</p>
+                        <textarea id="paste-area" placeholder="Collez le message ici…" rows="4"></textarea>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn btn-secondary" id="btn-parse-save" style="flex: 1;">Analyser et enregistrer</button>
+                            <button class="btn btn-ghost" id="btn-clear-paste" style="border: 1px solid var(--glass-border); color: var(--danger); padding: 0 16px;" title="Vider la zone de texte">Vider</button>
                         </div>
                     </div>
+
+                    <!-- Manual Form -->
+                    <form id="client-form" autocomplete="off" style="margin: 0;">
+                        <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                            <div class="form-group">
+                                <label for="input-code-client">🔐 Code Client</label>
+                                <input type="text" id="input-code-client" placeholder="HB986">
+                            </div>
+                            <div class="form-group">
+                                <label for="input-code-agent">👨‍💼 Code Agent</label>
+                                <input type="text" id="input-code-agent" placeholder="AGT01">
+                            </div>
+                            <div class="form-group">
+                                <label for="input-code-marketeur">📢 Code Marketeur</label>
+                                <input type="text" id="input-code-marketeur" placeholder="MK02">
+                            </div>
+                            <div class="form-group">
+                                <label for="input-nom-client">👤 Nom Client</label>
+                                <input type="text" id="input-nom-client" placeholder="Jean Dupont">
+                            </div>
+                            <div class="form-group">
+                                <label for="input-telephone">☎ Contact Client *</label>
+                                <input type="tel" id="input-telephone" placeholder="+221 ..." required>
+                            </div>
+                            <div class="form-group" style="grid-column: span 2;">
+                                <label for="input-intervention">👨🔧 Prestation *</label>
+                                <input type="text" id="input-intervention" placeholder="Prestation effectuée" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="input-montant-base">🔴 Facture</label>
+                                <input type="number" id="input-montant-base" placeholder="0" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="input-commission">🟡 Commission</label>
+                                <input type="number" id="input-commission" placeholder="0" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="input-montant-annexes">🔵 Frais Annexes</label>
+                                <input type="number" id="input-montant-annexes" placeholder="0" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="input-montant-deplacement">🚍 Frais Déplacement</label>
+                                <input type="number" id="input-montant-deplacement" placeholder="0" min="0">
+                            </div>
+                            <div class="form-group" style="grid-column: span 2;">
+                                <label for="input-commentaire">💬 Commentaire</label>
+                                <input type="text" id="input-commentaire" placeholder="Notes optionnelles...">
+                            </div>
+                            <div class="form-group" style="grid-column: span 2;">
+                                <label for="input-statut">Statut initial</label>
+                                <select id="input-statut">
+                                    <option value="en_attente">⏳ En attente</option>
+                                    <option value="en_cours">🔧 En cours</option>
+                                    <option value="effectue">✅ Effectué</option>
+                                    <option value="annule">❌ Annulé</option>
+                                </select>
+                            </div>
+                            <!-- Hidden date input to sync with header -->
+                            <input type="hidden" id="input-date">
+                        </div>
+                        <div class="form-actions" style="margin-top: 16px; justify-content: flex-end;">
+                            <button type="submit" class="btn btn-primary" id="btn-submit" style="width: 100%;">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                                </svg>
+                                Enregistrer la fiche
+                            </button>
+                        </div>
+                    </form>
                 </div>
             </div>
 
@@ -460,6 +530,12 @@
                 <button class="filter-btn" data-filter="en_cours">🔧 En cours</button>
                 <button class="filter-btn" data-filter="effectue">✅ Effectué</button>
                 <button class="filter-btn" data-filter="annule">❌ Annulé</button>
+                <button id="btn-reset-data" style="margin-left: auto; padding: 6px 16px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); cursor: pointer; transition: all 0.2s;" title="Réinitialiser toutes les données">
+                    🔄 Réinitialiser
+                </button>
+                <button id="btn-clear-current-list" style="padding: 6px 16px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); cursor: pointer; transition: all 0.2s;" title="Vider la liste actuellement affichée">
+                    🗑️ Vider la liste
+                </button>
             </div>
 
             <!-- Financial Summary Cards -->
@@ -506,14 +582,18 @@
                 <table id="clients-table">
                     <thead>
                         <tr>
-                            <th>Code</th>
-                            <th>Contact</th>
                             <th>Date</th>
-                            <th>Service</th>
+                            <th>Code Client</th>
+                            <th>Code Agent</th>
+                            <th>Code Marketeur</th>
+                            <th>Nom Client</th>
+                            <th>Contact Client</th>
+                            <th>Prestation</th>
                             <th>Facture</th>
-                            <th>F. Ann.</th>
-                            <th>TTC</th>
-                            <th>Dépl.</th>
+                            <th>Commission</th>
+                            <th>Frais Annexes</th>
+                            <th>Frais Dépl.</th>
+                            <th>Commentaire</th>
                             <th>Statut</th>
                             <th>Actions</th>
                         </tr>
@@ -535,97 +615,6 @@
             </div>
         </section>
 
-        <!-- ====== SCREEN 3 : ADD CLIENT ====== -->
-        <section id="screen-add-client" class="screen">
-            <div class="screen-header"
-                style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
-                <div>
-                    <h1>Ajouter pour le <input type="date" id="add-screen-date" class="header-date-input">
-                    </h1>
-                    <p class="screen-subtitle">Remplissez le formulaire ou collez les informations depuis WhatsApp.</p>
-                </div>
-            </div>
-
-            <!-- WhatsApp Paste Zone -->
-            <div class="paste-zone" id="paste-zone">
-                <div class="paste-icon">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
-                        <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
-                    </svg>
-                </div>
-                <p>Collez les informations du client ici (Ctrl+V)</p>
-                <textarea id="paste-area" placeholder="Collez le message WhatsApp ici…" rows="4"></textarea>
-                <button class="btn btn-secondary" id="btn-parse-save" style="width: 100%;">Analyser et
-                    enregistrer</button>
-            </div>
-
-            <form id="client-form" autocomplete="off">
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="input-code-client">🔐 Code Client</label>
-                        <input type="text" id="input-code-client" placeholder="Ex: HB986">
-                    </div>
-                    <div class="form-group">
-                        <label for="input-date">📅 Date (optionnel)</label>
-                        <input type="date" id="input-date" title="Laissez vide pour utiliser la date d'aujourd'hui">
-                    </div>
-                    <div class="form-group">
-                        <label for="input-telephone">☎ Contact *</label>
-                        <input type="tel" id="input-telephone" placeholder="Ex: +221 703349832" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="input-intervention">👨🔧 Service *</label>
-                        <input type="text" id="input-intervention" placeholder="Ex: activation Windows et office"
-                            required>
-                    </div>
-                    <div class="form-group" style="display: none;">
-                        <label for="input-priorite">Priorité</label>
-                        <select id="input-priorite">
-                            <option value="normal"> Normal</option>
-                            <option value="moyen"> Moyen</option>
-                            <option value="urgent"> Urgent</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="input-montant-base">🔴 Facture</label>
-                        <input type="number" id="input-montant-base" placeholder="Ex: 160000" min="0">
-                    </div>
-                    <div class="form-group">
-                        <label for="input-montant-annexes">🔵 Frais Annexes</label>
-                        <input type="number" id="input-montant-annexes" placeholder="Ex: 15000" min="0">
-                    </div>
-                    <div class="form-group">
-                        <label for="input-montant-deplacement">🚍 Déplacement</label>
-                        <input type="number" id="input-montant-deplacement" placeholder="Ex: 20000" min="0">
-                    </div>
-                    <div class="form-group">
-                        <label for="input-montant-ttc">🟢 Facture TTC</label>
-                        <input type="number" id="input-montant-ttc" placeholder="Ex: 10000" min="0">
-                    </div>
-                    <div class="form-group">
-                        <label for="input-statut">Statut</label>
-                        <select id="input-statut">
-                            <option value="en_attente">⏳ En attente</option>
-                            <option value="en_cours">🔧 En cours</option>
-                            <option value="effectue">✅ Effectué</option>
-                            <option value="annule">❌ Annulé</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="form-actions">
-                    <button type="reset" class="btn btn-ghost" id="btn-reset">Réinitialiser</button>
-                    <button type="submit" class="btn btn-primary" id="btn-submit">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                            <polyline points="17 21 17 13 7 13 7 21" />
-                            <polyline points="7 3 7 8 15 8" />
-                        </svg>
-                        Enregistrer
-                    </button>
-                </div>
-            </form>
-        </section>
 
         <!-- ====== SCREEN 4 : HISTORIQUE ====== -->
         <section id="screen-history" class="screen">
@@ -778,13 +767,18 @@
                     <table class="data-table">
                         <thead>
                             <tr>
-                                <th>Code</th>
-                                <th>Téléphone</th>
-                                <th>Service</th>
+                                <th>Date</th>
+                                <th>Code Client</th>
+                                <th>Code Agent</th>
+                                <th>Code Marketeur</th>
+                                <th>Nom Client</th>
+                                <th>Contact Client</th>
+                                <th>Prestation</th>
                                 <th>Facture</th>
-                                <th>Annexe</th>
-                                <th>TTC</th>
-                                <th>Dépl.</th>
+                                <th>Commission</th>
+                                <th>Frais Annexes</th>
+                                <th>Frais Dépl.</th>
+                                <th>Commentaire</th>
                                 <th>Statut</th>
                             </tr>
                         </thead>
@@ -1068,6 +1062,40 @@
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                                 CSV
                             </button>
+                            <div class="menu-divider"></div>
+                            <button class="export-option" id="btn-xt-export-json">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" style="width:16px;height:16px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><circle cx="10" cy="13" r="2"/><path d="M20 13c0 3.87-3.13 7-7 7"/></svg>
+                                Exporter la base de données (.json)
+                            </button>
+                        </div>
+                    </div>
+                    <input type="file" id="xt-import-json-input"  accept=".json"        class="visually-hidden">
+                    <input type="file" id="xt-import-excel-input" accept=".xlsx,.xls"   class="visually-hidden">
+                    <input type="file" id="xt-import-csv-input"   accept=".csv"         class="visually-hidden">
+                    <input type="file" id="xt-import-pdf-input"   accept=".pdf"         class="visually-hidden">
+                    <div class="export-dropdown-wrapper" id="xt-import-wrapper">
+                        <button id="btn-xt-import-toggle" class="btn btn-ghost" style="display: flex; gap: 6px; align-items: center; font-size: 0.85rem; color: var(--info);">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            Importer ▾
+                        </button>
+                        <div id="xt-import-menu" class="export-dropdown-menu hidden">
+                            <button class="export-option" id="btn-xt-import-excel">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" style="width:16px;height:16px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                Excel (.xlsx)
+                            </button>
+                            <button class="export-option" id="btn-xt-import-pdf">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" style="width:16px;height:16px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                                PDF (.pdf)
+                            </button>
+                            <button class="export-option" id="btn-xt-import-csv">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                CSV (.csv)
+                            </button>
+                            <div class="menu-divider"></div>
+                            <button class="export-option" id="btn-xt-import-json">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" style="width:16px;height:16px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><circle cx="10" cy="13" r="2"/><path d="M20 13c0 3.87-3.13 7-7 7"/></svg>
+                                Importer une base de données (.json)
+                            </button>
                         </div>
                     </div>
                     <button id="btn-xt-clear-all" class="btn btn-ghost" style="display: flex; gap: 6px; align-items: center; font-size: 0.85rem; color: #ef4444;">
@@ -1091,6 +1119,10 @@
                     <button id="btn-xt-parse" class="btn btn-primary" style="display: flex; gap: 8px; align-items: center; padding: 10px 24px; font-size: 0.95rem;">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                         Lancer l'extraction
+                    </button>
+                    <button id="btn-xt-clear-text" class="btn btn-ghost" style="display: flex; gap: 8px; align-items: center; padding: 10px 24px; font-size: 0.95rem; color: #ef4444;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                        Vider le texte
                     </button>
                     <span id="xt-parse-status" style="font-size: 0.85rem; color: var(--text-muted);"></span>
                 </div>
@@ -1169,18 +1201,18 @@
                 <table id="xt-table" style="min-width: 1200px; width: 100%; border-collapse: collapse;">
                     <thead>
                         <tr style="text-transform: uppercase; font-size: 0.70rem; color: #8c9bba; letter-spacing: 0.05em; border-bottom: 1px solid rgba(255,255,255,0.05); text-align: left;">
-                            <th style="padding: 16px 12px; font-weight: 600;">CODE</th>
-                            <th style="padding: 16px 12px; font-weight: 600;">CLIENT</th>
-                            <th style="padding: 16px 12px; font-weight: 600;">TÉLÉPHONE</th>
-                            <th style="padding: 16px 12px; font-weight: 600;">ADRESSE</th>
-                            <th style="padding: 16px 12px; font-weight: 600;">INTERVENTION</th>
-                            <th style="padding: 16px 12px; font-weight: 600;">FACTURE</th>
-                            <th style="padding: 16px 12px; font-weight: 600;">F. ANNEXES</th>
-                            <th style="padding: 16px 12px; font-weight: 600;">F. DÉPL.</th>
-                            <th style="padding: 16px 12px; font-weight: 600;">TTC</th>
-                            <th style="padding: 16px 12px; font-weight: 600;">MARKETEUR</th>
-                            <th style="padding: 16px 12px; font-weight: 600;">CODE S</th>
-                            <th style="padding: 16px 12px; width: 50px;"></th>
+                            <th>DATE</th>
+                            <th>CODE CLIENT</th>
+                            <th>CODE AGENT</th>
+                            <th>CODE MARKET.</th>
+                            <th>NOM CLIENT</th>
+                            <th>CONTACT CLIENT</th>
+                            <th>PRESTATION</th>
+                            <th>FACTURE</th>
+                            <th>COMMISSION</th>
+                            <th>F. ANNEXES</th>
+                            <th>DÉPLACEMENT</th>
+                            <th>COMMENTAIRE</th>
                         </tr>
                     </thead>
                     <tbody id="xt-tbody">
@@ -1217,11 +1249,23 @@
                             <input type="text" id="edit-code-client">
                         </div>
                         <div class="form-group">
-                            <label for="edit-telephone">☎ Contact</label>
+                            <label for="edit-code-agent">👨‍💼 Code Agent</label>
+                            <input type="text" id="edit-code-agent">
+                        </div>
+                        <div class="form-group">
+                            <label for="edit-code-marketeur">📢 Code Marketeur</label>
+                            <input type="text" id="edit-code-marketeur">
+                        </div>
+                        <div class="form-group">
+                            <label for="edit-nom-client">👤 Nom Client</label>
+                            <input type="text" id="edit-nom-client">
+                        </div>
+                        <div class="form-group">
+                            <label for="edit-telephone">☎ Contact Client</label>
                             <input type="tel" id="edit-telephone" required>
                         </div>
                         <div class="form-group">
-                            <label for="edit-intervention">👨🔧 Service</label>
+                            <label for="edit-intervention">👨🔧 Prestation</label>
                             <input type="text" id="edit-intervention" required>
                         </div>
                         <div class="form-group" style="display: none;">
@@ -1237,16 +1281,20 @@
                             <input type="number" id="edit-montant-base" min="0">
                         </div>
                         <div class="form-group">
+                            <label for="edit-commission">🟡 Commission</label>
+                            <input type="number" id="edit-commission" min="0">
+                        </div>
+                        <div class="form-group">
                             <label for="edit-montant-annexes">🔵 Frais Annexes</label>
                             <input type="number" id="edit-montant-annexes" min="0">
                         </div>
                         <div class="form-group">
-                            <label for="edit-montant-deplacement">🚍 Déplacement</label>
+                            <label for="edit-montant-deplacement">🚍 Frais Déplacement</label>
                             <input type="number" id="edit-montant-deplacement" min="0">
                         </div>
-                        <div class="form-group">
-                            <label for="edit-montant-ttc">🟢 Facture TTC</label>
-                            <input type="number" id="edit-montant-ttc" min="0">
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label for="edit-commentaire">💬 Commentaire</label>
+                            <input type="text" id="edit-commentaire">
                         </div>
                         <div class="form-group">
                             <label for="edit-statut">Statut</label>
@@ -1337,18 +1385,18 @@
             </div>
         </div>
 
-        <!-- Duplicate Warning Modal for Extraction -->
-        <div id="xt-duplicate-modal" class="modal-overlay hidden">
+        <!-- Global Duplicate Warning Modal -->
+        <div id="global-duplicate-modal" class="modal-overlay hidden">
             <div class="modal" style="max-width: 420px; text-align: center;">
                 <div class="modal-header" style="justify-content: center;">
                     <h2 style="color: var(--warning);">⚠️ Doublon(s) détecté(s)</h2>
                 </div>
-                <p id="xt-duplicate-msg" style="margin-bottom: 24px; color: var(--text-secondary);">
+                <p id="global-duplicate-msg" style="margin-bottom: 24px; color: var(--text-secondary);">
                     Une fiche similaire existe déjà dans le tableau.
                 </p>
                 <div class="form-actions" style="justify-content: center;">
-                    <button id="xt-dup-cancel" class="btn btn-secondary">Annuler la copie</button>
-                    <button id="xt-dup-force" class="btn btn-primary" style="background: var(--warning); box-shadow: 0 0 20px rgba(245, 158, 11, 0.2); color: #fff;">Copier quand même</button>
+                    <button id="global-dup-cancel" class="btn btn-secondary">Annuler l'ajout</button>
+                    <button id="global-dup-force" class="btn btn-primary" style="background: var(--warning); box-shadow: 0 0 20px rgba(245, 158, 11, 0.2); color: #fff;">Ajouter quand même</button>
                 </div>
             </div>
         </div>
