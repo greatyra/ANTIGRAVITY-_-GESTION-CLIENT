@@ -125,7 +125,7 @@
             else if (l.includes('nom') || l.includes('prénom') || l.includes('prenom')) data.nomClient = val;
             else if (l.includes('tel') || l.includes('contact') || l.includes('tél')) data.telephone = val;
             else if (l.includes('inter') || l.includes('serv') || l.includes('prest')) data.intervention = val;
-            else if (l.includes('facture') || l.includes('montant base')) data.montantBase = cleanNum(val);
+            else if ((l.includes('facture') && !l.includes('ttc')) || l.includes('montant base')) data.montantBase = cleanNum(val);
             else if (l.includes('commis')) data.commission = cleanNum(val);
             else if (l.includes('dépla') || l.includes('depla') || l.includes('trajet')) data.deplacement = cleanNum(val);
             else if (l.includes('frais') || l.includes('annexe')) data.fraisAnnexes = cleanNum(val);
@@ -952,6 +952,41 @@
             $('#sidebar').classList.remove('open');
             $('#sidebar-overlay').classList.remove('show');
         });
+
+        // ─── Modal À propos ───
+        const aboutModal = $('#about-modal');
+        const btnAbout = $('#btn-about');
+        const btnAboutClose = $('#btn-about-close');
+
+        if (btnAbout && aboutModal) {
+            btnAbout.addEventListener('click', () => {
+                aboutModal.classList.remove('hidden');
+                // Fermer la sidebar mobile si elle est ouverte
+                $('#sidebar').classList.remove('open');
+                $('#sidebar-overlay').classList.remove('show');
+            });
+        }
+
+        if (btnAboutClose && aboutModal) {
+            btnAboutClose.addEventListener('click', () => {
+                aboutModal.classList.add('hidden');
+            });
+        }
+
+        if (aboutModal) {
+            // Fermer au clic sur l'overlay
+            aboutModal.addEventListener('click', (e) => {
+                if (e.target === aboutModal) {
+                    aboutModal.classList.add('hidden');
+                }
+            });
+            // Fermer avec Echap
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && !aboutModal.classList.contains('hidden')) {
+                    aboutModal.classList.add('hidden');
+                }
+            });
+        }
 
         // ─── Toggle Add Client Form ───
         const btnToggleForm = $('#btn-toggle-add-form');
@@ -1825,6 +1860,7 @@
         'téléphone': 'telephone', 'telephone': 'telephone', 'tél.': 'telephone', 'tel': 'telephone', 'contact': 'telephone', 'contact client': 'telephone',
         'service': 'intervention', 'intervention': 'intervention', 'prestation': 'intervention',
         'facture': 'montantBase', 'facture base': 'montantBase', 'montant base': 'montantBase', 'facture (f)': 'montantBase',
+        'facture ttc': 'montantTTC', '🟢 facture ttc': 'montantTTC',
         'commission': 'commission', 'commission (f)': 'commission', 'com.': 'commission',
         'frais annexes': 'fraisAnnexes', 'f. ann.': 'fraisAnnexes', 'annexe': 'fraisAnnexes', 'annexes': 'fraisAnnexes', 'frais ann. (f)': 'fraisAnnexes',
         'déplacement': 'deplacement', 'deplacement': 'deplacement', 'dépl.': 'deplacement', 'trajet': 'deplacement', 'dépl. (f)': 'deplacement',
@@ -2375,7 +2411,7 @@
             if (val !== null) { row.commission = parseMoney(val); return; }
 
             val = extractField(line, ['facture', 'prix']);
-            if (val !== null && !line.toLowerCase().includes('annexes')) {
+            if (val !== null && !line.toLowerCase().includes('ttc') && !line.toLowerCase().includes('annexes')) {
                 row.montantBase = parseMoney(val); return;
             }
 
