@@ -2197,6 +2197,7 @@
         const score = Math.round((rate / 100) * 20);
 
         const totalFactures = all.reduce((s, c) => s + (Number(c.montantBase) || 0), 0);
+        const totalAnnexes = all.reduce((s, c) => s + (Number(c.fraisAnnexes) || 0), 0);
         const totalDeplacement = all.reduce((s, c) => s + (Number(c.deplacement) || 0), 0);
         const totalTTC = totalExpected;
 
@@ -2230,43 +2231,55 @@
         y += 10;
 
         // --- SECTION 1: SYNTHESE ---
-        doc.setFontSize(14);
-        doc.setTextColor(40, 40, 40);
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 145, 255);
         doc.text('1. Synthèse Globale', 14, y);
-        y += 8;
+        doc.setFont('helvetica', 'normal');
+        y += 10;
 
-        doc.setFontSize(12);
-        doc.setTextColor(70, 70, 70);
+        doc.setFontSize(13);
+        doc.setTextColor(60, 60, 60);
         doc.text(`- Total Fiches (Période) : ${all.length}`, 20, y);
-        y += 6;
-        doc.text(`- Interventions Effectuées : ${done.length}`, 20, y);
-        y += 6;
-        doc.text(`- Total Factures : ${formatMoneyPDF(totalFactures)}`, 20, y);
-        y += 6;
-        doc.text(`- Total Frais de Déplacement : ${formatMoneyPDF(totalDeplacement)}`, 20, y);
-        y += 6;
-        doc.text(`- Total TTC : ${formatMoneyPDF(totalTTC)}`, 20, y);
-        y += 6;
-        doc.text(`- Chiffre d'Affaires Theorique : ${formatMoneyPDF(totalExpected)}`, 20, y);
-        y += 6;
-        doc.text(`- Chiffre d'Affaires Realise : ${formatMoneyPDF(totalRealised)}`, 20, y);
-        y += 6;
-        doc.text(`- Taux de réalisation : ${rate}%`, 20, y);
         y += 8;
+        doc.text(`- Interventions Effectuées : ${done.length}`, 20, y);
+        y += 8;
+        doc.text(`- Total Factures : ${formatMoneyPDF(totalFactures)}`, 20, y);
+        y += 8;
+        doc.text(`- Total Frais Annexes : ${formatMoneyPDF(totalAnnexes)}`, 20, y);
+        y += 8;
+        doc.text(`- Total TTC : ${formatMoneyPDF(totalTTC)}`, 20, y);
+        y += 8;
+        doc.text(`- Total Frais de Déplacement : ${formatMoneyPDF(totalDeplacement)}`, 20, y);
+        y += 8;
+        doc.text(`- Chiffre d'Affaires Theorique : ${formatMoneyPDF(totalExpected)}`, 20, y);
+        y += 8;
+        doc.text(`- Chiffre d'Affaires Realise : ${formatMoneyPDF(totalRealised)}`, 20, y);
+        y += 10;
+        
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(147, 51, 234); // purple highlight
+        doc.text(`- Taux de réalisation : ${rate}%`, 20, y);
+        doc.setFont('helvetica', 'normal');
+        y += 12;
 
         // Score Highlight
-        doc.setFontSize(14);
-        doc.setFillColor(rate >= 75 ? 230 : 255, rate >= 50 ? 250 : 230, rate >= 75 ? 230 : 230); // Dynamic color based on rate somewhat
-        doc.rect(14, y, 90, 12, 'F');
-        doc.setTextColor(20, 20, 20);
-        doc.text(`Note de Performance : ${score} / 20`, 18, y + 8);
-        y += 20;
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.setFillColor(243, 232, 255); // light purple background
+        doc.rect(14, y, 90, 14, 'F');
+        doc.setTextColor(107, 33, 168); // dark purple text
+        doc.text(`Note de Performance : ${score} / 20`, 18, y + 10);
+        doc.setFont('helvetica', 'normal');
+        y += 24;
 
         // --- SECTION 2: RÉPARTITION DES STATUTS ---
-        doc.setFontSize(14);
-        doc.setTextColor(40, 40, 40);
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 145, 255);
         doc.text('2. Répartition par Statut', 14, y);
-        y += 8;
+        doc.setFont('helvetica', 'normal');
+        y += 10;
 
         const statusData = [
             ['Statut', 'Quantité', 'Pourcentage'],
@@ -2281,23 +2294,28 @@
             head: [statusData[0]],
             body: statusData.slice(1),
             theme: 'striped',
-            headStyles: { fillColor: [50, 50, 50] },
+            headStyles: { fillColor: [0, 145, 255], fontSize: 11 },
+            bodyStyles: { fontSize: 11 },
             margin: { left: 14 }
         });
 
-        y = doc.lastAutoTable.finalY + 15;
+        y = doc.lastAutoTable.finalY + 20;
 
         // --- SECTION 3: DÉPERDITION ---
-        doc.setFontSize(14);
-        doc.setTextColor(40, 40, 40);
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 145, 255);
         doc.text('3. Déperdition', 14, y);
-        y += 8;
+        doc.setFont('helvetica', 'normal');
+        y += 10;
 
-        doc.setFontSize(12);
-        doc.setTextColor(220, 38, 38); // Red text for loss
+        doc.setFontSize(13);
+        doc.setTextColor(220, 38, 38); // Red text
         doc.text(`- Fiches non traitées : ${lossClients.length}`, 20, y);
-        y += 6;
+        y += 8;
+        doc.setFont('helvetica', 'bold');
         doc.text(`- Montant potentiel perdu : ${formatMoneyPDF(lossAmount)}`, 20, y);
+        doc.setFont('helvetica', 'normal');
 
         // Footer
         doc.setFontSize(9);
