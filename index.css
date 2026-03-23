@@ -2628,3 +2628,11 @@ tr:hover td {
         padding: 8px 12px;
     }
 }
+
+/* ── Utilitaire : cellule tronquée ── */
+.td-truncate {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

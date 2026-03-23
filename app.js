@@ -105,9 +105,13 @@
         lines.forEach(line => {
             const l = line.toLowerCase();
 
-            // Traitement spécial pour CODE S (le tiret dans la valeur ne doit pas être utilisé comme séparateur)
-            if (l.includes('code s')) {
-                const codeSParts = line.split(/[:]/); // split uniquement sur ':'
+            // Traitement spécial pour CODE S : on cherche prioritairement un pattern 000000-000000
+            const codeSMatch = line.match(/\b\d{6}-\d{6}\b/);
+            if (codeSMatch) {
+                data.codeS = codeSMatch[0];
+                return;
+            } else if (l.includes('code s')) {
+                const codeSParts = line.split(/[:]/);
                 if (codeSParts.length >= 2) {
                     data.codeS = codeSParts.slice(1).join(':').trim();
                 }
@@ -402,7 +406,8 @@
                 (c.nomClient || '').toLowerCase().includes(q) ||
                 (c.codeClient || '').toLowerCase().includes(q) ||
                 (c.telephone || '').toLowerCase().includes(q) ||
-                (c.codeMarketeur || '').toLowerCase().includes(q)
+                (c.codeMarketeur || '').toLowerCase().includes(q) ||
+                (c.codeS || '').toLowerCase().includes(q)
             );
         }
 
@@ -437,23 +442,24 @@
             clients.forEach(c => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td>${c.date || '-'}</td>
-                    <td><span class="code-pill">${c.codeClient || '-'}</span></td>
-                    <td><span class="code-pill">${c.codeAgent || '-'}</span></td>
-                    <td>${c.codeMarketeur || '-'}</td>
-                    <td class="font-bold">${c.nomClient || '-'}</td>
-                    <td>${c.telephone || '-'}</td>
-                    <td>${c.intervention || '-'}</td>
+                    <td>${escapeHTML(c.date || '-')}</td>
+                    <td><span class="code-pill">${escapeHTML(c.codeClient || '-')}</span></td>
+                    <td><span class="code-pill">${escapeHTML(c.codeAgent || '-')}</span></td>
+                    <td>${escapeHTML(c.codeMarketeur || '-')}</td>
+                    <td class="font-bold">${escapeHTML(c.nomClient || '-')}</td>
+                    <td>${escapeHTML(c.telephone || '-')}</td>
+                    <td>${escapeHTML(c.intervention || '-')}</td>
                     <td>${formatMoney(c.montantBase)}</td>
                     <td style="color: var(--warning);">${formatMoney(c.commission)}</td>
                     <td>${formatMoney(c.fraisAnnexes)}</td>
                     <td>${formatMoney(c.deplacement)}</td>
-                    <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${c.commentaire || ''}">${c.commentaire || '-'}</td>
-                    <td><button class="status-badge status-${c.statut}" onclick="window.cycleStatus('${c.id}')">${formatStatus(c.statut)}</button></td>
+                    <td class="td-truncate" title="${escapeHTML(c.commentaire || '')}">${escapeHTML(c.commentaire || '-')}</td>
+                    <td><span class="code-pill">${escapeHTML(c.codeS || '-')}</span></td>
+                    <td><button class="status-badge status-${escapeHTML(c.statut)}" onclick="window.cycleStatus('${escapeHTML(c.id)}')">${formatStatus(c.statut)}</button></td>
                     <td>
                         <div class="action-btns">
-                            <button class="action-btn" onclick="window.openEditModal('${c.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-                            <button class="action-btn delete" onclick="window.askDelete('${c.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                            <button class="action-btn" onclick="window.openEditModal('${escapeHTML(c.id)}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                            <button class="action-btn delete" onclick="window.askDelete('${escapeHTML(c.id)}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
                         </div>
                     </td>
                 `;
@@ -562,19 +568,20 @@
         if (tbody) {
             tbody.innerHTML = clients.map(c => `
                 <tr>
-                    <td>${c.date || '-'}</td>
-                    <td><span class="code-pill">${c.codeClient || '-'}</span></td>
-                    <td><span class="code-pill">${c.codeAgent || '-'}</span></td>
-                    <td>${c.codeMarketeur || '-'}</td>
-                    <td class="font-bold">${c.nomClient || '-'}</td>
-                    <td>${c.telephone || '-'}</td>
-                    <td title="${c.intervention || ''}">${c.intervention ? (c.intervention.length > 30 ? c.intervention.slice(0, 30) + '...' : c.intervention) : '-'}</td>
+                    <td>${escapeHTML(c.date || '-')}</td>
+                    <td><span class="code-pill">${escapeHTML(c.codeClient || '-')}</span></td>
+                    <td><span class="code-pill">${escapeHTML(c.codeAgent || '-')}</span></td>
+                    <td>${escapeHTML(c.codeMarketeur || '-')}</td>
+                    <td class="font-bold">${escapeHTML(c.nomClient || '-')}</td>
+                    <td>${escapeHTML(c.telephone || '-')}</td>
+                    <td title="${escapeHTML(c.intervention || '')}">${c.intervention ? escapeHTML(c.intervention.length > 30 ? c.intervention.slice(0, 30) + '...' : c.intervention) : '-'}</td>
                     <td>${formatMoney(c.montantBase)}</td>
                     <td style="color: var(--warning);">${formatMoney(c.commission)}</td>
                     <td>${formatMoney(c.fraisAnnexes)}</td>
                     <td>${formatMoney(c.deplacement)}</td>
-                    <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${c.commentaire || ''}">${c.commentaire || '-'}</td>
-                    <td><button class="status-badge status-${c.statut}" onclick="window.cycleStatus('${c.id}')">${formatStatus(c.statut)}</button></td>
+                    <td class="td-truncate" title="${escapeHTML(c.commentaire || '')}">${escapeHTML(c.commentaire || '-')}</td>
+                    <td><span class="code-pill">${escapeHTML(c.codeS || '-')}</span></td>
+                    <td><button class="status-badge status-${escapeHTML(c.statut)}" onclick="window.cycleStatus('${escapeHTML(c.id)}')">${formatStatus(c.statut)}</button></td>
                 </tr>
             `).join('');
         }
@@ -707,7 +714,7 @@
                         tooltip: {
                             callbacks: {
                                 label: function (context) {
-                                    return formatMoney(context.raw) + ' FCFA';
+                                    return formatMoney(context.raw);
                                 }
                             }
                         }
@@ -933,16 +940,6 @@
             });
         }
 
-        $$('.nav-btn').forEach(btn => btn.addEventListener('click', () => {
-            const screen = btn.dataset.screen;
-            // Pré-remplir la date si on va vers le formulaire d'ajout
-            if (screen === 'clients') {
-                if ($('#input-date')) $('#input-date').value = viewDate;
-                if ($('#add-screen-date')) $('#add-screen-date').value = viewDate;
-            }
-            switchScreen(screen);
-        }));
-
         $('#mobile-menu-btn').addEventListener('click', () => {
             $('#sidebar').classList.toggle('open');
             $('#sidebar-overlay').classList.toggle('show');
@@ -990,17 +987,33 @@
 
         // ─── Toggle Add Client Form ───
         const btnToggleForm = $('#btn-toggle-add-form');
+        const btnEmptyAdd   = $('#btn-empty-add');
         const addContainer = $('#add-client-container');
+
+        const openAddContainer = () => {
+            addContainer.classList.remove('hidden');
+            if (btnToggleForm) btnToggleForm.classList.add('btn-ghost');
+            if (!addContainer.classList.contains('hidden')) {
+                $('#add-screen-date').value = viewDate;
+                $('#input-date').value = viewDate;
+                addContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        };
+
         if (btnToggleForm && addContainer) {
             btnToggleForm.addEventListener('click', () => {
-                addContainer.classList.toggle('hidden');
-                btnToggleForm.classList.toggle('btn-ghost');
-                if (!addContainer.classList.contains('hidden')) {
-                    $('#add-screen-date').value = viewDate;
-                    $('#input-date').value = viewDate;
-                    addContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                const isHidden = addContainer.classList.contains('hidden');
+                if (isHidden) {
+                    openAddContainer();
+                } else {
+                    addContainer.classList.add('hidden');
+                    btnToggleForm.classList.remove('btn-ghost');
                 }
             });
+        }
+
+        if (btnEmptyAdd && addContainer) {
+            btnEmptyAdd.addEventListener('click', openAddContainer);
         }
 
         // ─── Export Dropdown ───
@@ -1393,6 +1406,7 @@
                 fraisAnnexes: $('#input-montant-annexes').value,
                 deplacement: $('#input-montant-deplacement').value,
                 commentaire: $('#input-commentaire').value.trim(),
+                codeS: $('#input-code-s') ? $('#input-code-s').value.trim() : '',
                 date: $('#input-date') ? $('#input-date').value : $('#add-screen-date').value || todayStr()
             };
 
@@ -1443,7 +1457,8 @@
                     commission: Number($('#edit-commission').value) || 0,
                     fraisAnnexes: Number($('#edit-montant-annexes').value) || 0,
                     deplacement: Number($('#edit-montant-deplacement').value) || 0,
-                    commentaire: $('#edit-commentaire').value.trim()
+                    commentaire: $('#edit-commentaire').value.trim(),
+                    codeS: $('#edit-code-s') ? $('#edit-code-s').value.trim() : ''
                 };
 
                 clients[idx] = updatedClient;
@@ -1567,6 +1582,7 @@
         $('#edit-montant-annexes').value = c.fraisAnnexes;
         $('#edit-montant-deplacement').value = c.deplacement;
         $('#edit-commentaire').value = c.commentaire || '';
+        if ($('#edit-code-s')) $('#edit-code-s').value = c.codeS || '';
         $('#edit-modal').classList.remove('hidden');
     };
 
@@ -1609,11 +1625,12 @@
             'Nom Client':    c.nomClient || '-',
             'Contact Client':c.telephone || '-',
             'Prestation':    c.intervention || '-',
-            'Facture (F)':   Number(c.montantBase) || 0,
-            'Commission (F)':Number(c.commission) || 0,
-            'Frais Ann. (F)':Number(c.fraisAnnexes) || 0,
-            'Dépl. (F)':     Number(c.deplacement) || 0,
+            'Facture':       Number(c.montantBase) || 0,
+            'Commission':    Number(c.commission) || 0,
+            'Frais Annexes': Number(c.fraisAnnexes) || 0,
+            'Déplacement':   Number(c.deplacement) || 0,
             'Commentaire':   c.commentaire || '-',
+            'CODE S':        c.codeS || '-',
             'Statut':        c.statut || '-'
         }));
 
@@ -1633,6 +1650,7 @@
             { wch: 14 }, // Frais
             { wch: 14 }, // Dépl
             { wch: 25 }, // Commentaire
+            { wch: 15 }, // CODE S
             { wch: 12 }  // Statut
         ];
 
@@ -1735,7 +1753,7 @@
         });
 
         // ── Tableau ──
-        const headers = ['Date', 'Code C.', 'Code Ag.', 'Code Mk.', 'Nom', 'Contact', 'Prestation', 'Facture', 'Com.', 'Frais', 'Dépl.', 'Obs.', 'Statut'];
+        const headers = ['Date', 'Code C.', 'Code Ag.', 'Code Mk.', 'Nom', 'Contact', 'Prestation', 'Facture', 'Com.', 'Frais', 'Dépl.', 'Obs.', 'CODE S', 'Statut'];
         const rows = clients.map(c => [
             c.date || '-',
             c.codeClient || '-',
@@ -1749,6 +1767,7 @@
             formatMoneyPDF(c.fraisAnnexes),
             formatMoneyPDF(c.deplacement),
             (c.commentaire || '-').substring(0, 15),
+            c.codeS || '-',
             c.statut || '-'
         ]);
 
@@ -1779,7 +1798,8 @@
                 9: { halign: 'right', cellWidth: 16 },
                 10: { halign: 'right', cellWidth: 16 },
                 11: { cellWidth: 20 },
-                12: { cellWidth: 18, halign: 'center' }
+                12: { cellWidth: 15 },
+                13: { cellWidth: 15, halign: 'center' }
             },
             didDrawPage: (data) => {
                 // Pied de page
@@ -1804,10 +1824,10 @@
             showToast('Aucune donnée à exporter', 'info');
             return;
         }
-        const headers = ['Date', 'Code Client', 'Code Agent', 'Code Marketeur', 'Nom Client', 'Contact Client', 'Prestation', 'Facture', 'Commission', 'Frais Annexes', 'Déplacement', 'Commentaire', 'Statut'];
+        const headers = ['Date', 'Code Client', 'Code Agent', 'Code Marketeur', 'Nom Client', 'Contact Client', 'Prestation', 'Facture', 'Commission', 'Frais Annexes', 'Déplacement', 'Commentaire', 'CODE S', 'Statut'];
         let csvContent = '\uFEFF' + headers.join(';') + '\n';
         clients.forEach(c => {
-            const row = [c.date, c.codeClient, c.codeAgent, c.codeMarketeur, c.nomClient, c.telephone, c.intervention, c.montantBase, c.commission, c.fraisAnnexes, c.deplacement, c.commentaire, c.statut]
+            const row = [c.date, c.codeClient, c.codeAgent, c.codeMarketeur, c.nomClient, c.telephone, c.intervention, c.montantBase, c.commission, c.fraisAnnexes, c.deplacement, c.commentaire, c.codeS, c.statut]
                 .map(v => `"${(v || '').toString().replace(/"/g, '""')}"`)
                 .join(';');
             csvContent += row + '\n';
@@ -1818,7 +1838,7 @@
         const totCom  = clients.reduce((s, c) => s + (Number(c.commission) || 0), 0);
         const totAnn  = clients.reduce((s, c) => s + (Number(c.fraisAnnexes) || 0), 0);
         const totDepl = clients.reduce((s, c) => s + (Number(c.deplacement) || 0), 0);
-        const totalsRow = ['"TOTAUX"', '""', '""', '""', '""', '""', '""', `"${totBase}"`, `"${totCom}"`, `"${totAnn}"`, `"${totDepl}"`, '""', '""'].join(';');
+        const totalsRow = ['"TOTAUX"', '""', '""', '""', '""', '""', '""', `"${totBase}"`, `"${totCom}"`, `"${totAnn}"`, `"${totDepl}"`, '""', '""', '""'].join(';');
         csvContent += totalsRow + '\n';
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
@@ -1826,6 +1846,7 @@
         link.href = url;
         link.download = `export_megapro_${todayStr()}.csv`;
         link.click();
+        URL.revokeObjectURL(url);
         showToast('Exportation réussie');
     }
 
@@ -2169,11 +2190,15 @@
         const done = all.filter(c => c.statut === 'effectue');
         const lossClients = all.filter(c => c.statut !== 'effectue' && c.statut !== 'annule');
 
-        const totalExpected = all.reduce((s, c) => s + (Number(c.montantBase) || 0), 0) + all.reduce((s, c) => s + (Number(c.fraisAnnexes) || 0), 0) + all.reduce((s, c) => s + (Number(c.deplacement) || 0), 0);
-        const totalRealised = done.reduce((s, c) => s + (Number(c.montantBase) || 0), 0) + done.reduce((s, c) => s + (Number(c.fraisAnnexes) || 0), 0) + done.reduce((s, c) => s + (Number(c.deplacement) || 0), 0);
+        const totalExpected = all.reduce((s, c) => s + calcTTC(c), 0);
+        const totalRealised = done.reduce((s, c) => s + calcTTC(c), 0);
         const rate = totalExpected > 0 ? Math.round((totalRealised / totalExpected) * 100) : 0;
         const lossAmount = lossClients.reduce((s, c) => s + (Number(c.montantBase) || 0), 0);
         const score = Math.round((rate / 100) * 20);
+
+        const totalFactures = all.reduce((s, c) => s + (Number(c.montantBase) || 0), 0);
+        const totalDeplacement = all.reduce((s, c) => s + (Number(c.deplacement) || 0), 0);
+        const totalTTC = totalExpected;
 
         const counts = {
             en_attente: all.filter(c => c.statut === 'en_attente').length,
@@ -2216,9 +2241,15 @@
         y += 6;
         doc.text(`- Interventions Effectuées : ${done.length}`, 20, y);
         y += 6;
-        doc.text(`- Chiffre d'Affaires Theorique : ${formatMoneyPDF(totalExpected)} FCFA`, 20, y);
+        doc.text(`- Total Factures : ${formatMoneyPDF(totalFactures)}`, 20, y);
         y += 6;
-        doc.text(`- Chiffre d'Affaires Realise : ${formatMoneyPDF(totalRealised)} FCFA`, 20, y);
+        doc.text(`- Total Frais de Déplacement : ${formatMoneyPDF(totalDeplacement)}`, 20, y);
+        y += 6;
+        doc.text(`- Total TTC : ${formatMoneyPDF(totalTTC)}`, 20, y);
+        y += 6;
+        doc.text(`- Chiffre d'Affaires Theorique : ${formatMoneyPDF(totalExpected)}`, 20, y);
+        y += 6;
+        doc.text(`- Chiffre d'Affaires Realise : ${formatMoneyPDF(totalRealised)}`, 20, y);
         y += 6;
         doc.text(`- Taux de réalisation : ${rate}%`, 20, y);
         y += 8;
@@ -2266,7 +2297,7 @@
         doc.setTextColor(220, 38, 38); // Red text for loss
         doc.text(`- Fiches non traitées : ${lossClients.length}`, 20, y);
         y += 6;
-        doc.text(`- Montant potentiel perdu : ${formatMoneyPDF(lossAmount)} FCFA`, 20, y);
+        doc.text(`- Montant potentiel perdu : ${formatMoneyPDF(lossAmount)}`, 20, y);
 
         // Footer
         doc.setFontSize(9);
@@ -2334,22 +2365,6 @@
     }
 
     /**
-     * Convert date formats:
-     * "11/03/2026" → "2026-03-11"
-     * Already ISO → unchanged
-     */
-    function normalizeDateXT(str) {
-        if (!str) return '';
-        str = str.trim();
-        if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
-        if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(str)) {
-            const [d, m, y] = str.split('/');
-            return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-        }
-        return str;
-    }
-
-    /**
      * Parse a single fiche text and return a structured object.
      */
     function parseClientFiche(text) {
@@ -2394,7 +2409,7 @@
             val = extractField(line, ['date']);
             if (val !== null) {
                 const cleaned = stripDecorations(val).split(/\s/)[0];
-                const d = normalizeDateXT(cleaned);
+                const d = normalizeDate(cleaned);
                 if (d) { row.date = d; return; }
             }
 
@@ -2543,7 +2558,6 @@
     // ─── Delete a row ───
     window.xtDeleteRow = function(id) {
         extractedRows = extractedRows.filter(r => r.id !== id);
-        populateExtractionFilters();
         renderExtractionTable();
     };
 
@@ -2637,7 +2651,7 @@
 
         doc.setFontSize(8);
         doc.setTextColor(40, 40, 40);
-        doc.text(`Total Facture: ${formatMoneyPDF(totFact)} FCFA   |   Total Frais Annexes: ${formatMoneyPDF(totAnn)} FCFA   |   Total Deplacement: ${formatMoneyPDF(totDepl)} FCFA   |   Total TTC: ${formatMoneyPDF(totTTC)} FCFA`, 14, 30);
+        doc.text(`Total Facture: ${formatMoneyPDF(totFact)}   |   Total Frais Annexes: ${formatMoneyPDF(totAnn)}   |   Total Deplacement: ${formatMoneyPDF(totDepl)}   |   Total TTC: ${formatMoneyPDF(totTTC)}`, 14, 30);
 
         const headers = ['Date', 'Code', 'Nom Client', 'Contact', 'Prestation', 'Facture', 'Com.', 'F. Ann.', 'Depl.', 'Obs.', 'CODE S'];
         const body = rows.map(r => [
@@ -2668,7 +2682,7 @@
         const finalY = doc.lastAutoTable.finalY + 8;
         doc.setFontSize(8);
         doc.setTextColor(0, 145, 255);
-        doc.text(`Totaux : Facture=${formatMoney(totFact)} | Frais Ann.=${formatMoney(totAnn)} | Dépl.=${formatMoney(totDepl)} | TTC=${formatMoney(totTTC)} FCFA`, 14, finalY);
+        doc.text(`Totaux : Facture=${formatMoney(totFact)} | Frais Ann.=${formatMoney(totAnn)} | Dépl.=${formatMoney(totDepl)} | TTC=${formatMoney(totTTC)}`, 14, finalY);
 
         doc.save(`extraction_megapro_${todayStr()}.pdf`);
         showToast('Export PDF réussi ✅');
@@ -2705,7 +2719,7 @@
                 if (!text) { showToast('Veuillez coller du texte d\'abord', 'info'); return; }
 
                 const newRows = parseMultipleFiches(text);
-                const valid = newRows.filter(r => r.codeClient || r.contact || r.service);
+                const valid = newRows.filter(r => r.codeClient || r.telephone || r.intervention);
 
                 if (valid.length === 0) {
                     showToast('Aucune fiche reconnue. Vérifiez le format du texte.', 'error');
@@ -2713,9 +2727,9 @@
                 }
 
                 const duplicates = valid.filter(newR => {
-                    return extractedRows.some(oldR => 
+                    return extractedRows.some(oldR =>
                         (newR.codeClient && oldR.codeClient && newR.codeClient.toLowerCase() === oldR.codeClient.toLowerCase()) ||
-                        (newR.contact && oldR.contact && newR.contact.replace(/\s+/g, '') === oldR.contact.replace(/\s+/g, ''))
+                        (newR.telephone && oldR.telephone && newR.telephone.replace(/\s+/g, '') === oldR.telephone.replace(/\s+/g, ''))
                     );
                 });
 
